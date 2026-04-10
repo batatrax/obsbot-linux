@@ -116,11 +116,29 @@ QWidget* ControlPanel::buildGimbalSection()
     m_speedLbl->setStyleSheet("color:#585b70;font-size:10px;");
     root->addWidget(m_speedLbl);
 
-    // Boutons Reset + Cibler
+    // Boutons Reset + Home + Cibler
     {
         auto *row = new QHBoxLayout;
         auto *resetBtn = new QPushButton("⟳ Reset");
+        auto *homeBtn  = new QPushButton("🏠");
         auto *faceBtn  = new QPushButton("👤 Visage");
+        homeBtn->setToolTip("Mémoriser le zoom actuel (retour ici si suivi perdu)");
+        homeBtn->setMaximumHeight(28);
+        connect(homeBtn, &QPushButton::clicked, this, [this]{
+            float yaw = 0, pitch = 0;
+            DeviceManager::instance().getGimbalAngle(yaw, pitch);
+            m_homeYaw   = yaw;
+            m_homePitch = pitch;
+            m_homeZoom  = m_zoom->value() / 100.0f;
+            m_aiStatusLbl->setText(
+                QString("Accueil: %1x  Pan:%2°  Tilt:%3°")
+                    .arg(double(m_homeZoom), 0, 'f', 1)
+                    .arg(double(m_homeYaw),  0, 'f', 0)
+                    .arg(double(m_homePitch),0, 'f', 0));
+            QTimer::singleShot(3000, this, [this]{
+                if (!m_aiActive) m_aiStatusLbl->setText("IA inactive");
+            });
+        });
         faceBtn->setStyleSheet(
             "QPushButton{background:#89b4fa;color:#1e1e2e;border:none;"
             "border-radius:5px;font-weight:bold;padding:3px 10px;}"
@@ -130,7 +148,7 @@ QWidget* ControlPanel::buildGimbalSection()
         faceBtn->setMaximumHeight(28);
         connect(resetBtn, &QPushButton::clicked, this, &ControlPanel::onReset);
         connect(faceBtn,  &QPushButton::clicked, this, &ControlPanel::onFaceTarget);
-        row->addWidget(resetBtn); row->addWidget(faceBtn);
+        row->addWidget(resetBtn); row->addWidget(homeBtn); row->addWidget(faceBtn);
         root->addLayout(row);
     }
 
@@ -167,9 +185,9 @@ QWidget* ControlPanel::buildGimbalSection()
     connect(m_joystick, &JoystickWidget::faceTargetRequested,this, &ControlPanel::onFaceTarget);
     connect(m_joystick, &JoystickWidget::presetRequested,    this, &ControlPanel::onPresetLoad);
     connect(m_joystick, &JoystickWidget::userTouched, this, [this]{
-        // Suspendre IA pendant utilisation joystick
         if (m_aiActive && !m_aiSuspended) {
-            m_aiSuspended = true;
+            m_aiSuspended    = true;
+            m_noTargetFrames = 0;
             DeviceManager::instance().cancelAiMode();
             m_aiStatusLbl->setText("IA suspendue");
             m_aiStatusLbl->setStyleSheet("color:#f9e2af;font-size:10px;");
@@ -438,9 +456,6 @@ QWidget* ControlPanel::buildFirmwareSection()
             m_fwVersionLbl->setText(
                 "Firmware v" + DeviceManager::instance().deviceVersion());
     };
-    connect(m_fwToggleBtn, &QPushButton::clicked, this, toggleFn);
-    header->installEventFilter(this);
-    // Connecter le clic sur le header entier
     connect(m_fwToggleBtn, &QPushButton::clicked, this, &ControlPanel::onFirmwareToggle);
 
     return container;
@@ -459,6 +474,9 @@ void ControlPanel::onZoomChanged(int v)
 {
     m_zoomLbl->setText(QString("%1x").arg(v/100.0,0,'f',1));
     DeviceManager::instance().setZoom(v/100.0);
+    // Empêcher l'IA de dezoom immédiatement après un zoom manuel
+    if (m_aiActive)
+        DeviceManager::instance().setAiAutoZoom(false);
 }
 
 void ControlPanel::onFovChanged(int)
@@ -571,12 +589,42 @@ void ControlPanel::onStatusUpdated(Device::CameraStatus status)
     }
     if (DeviceManager::instance().isConnected() && !m_firmwareExpanded)
         m_fwVersionLbl->setText("Firmware v"+DeviceManager::instance().deviceVersion());
+
+    // Le firmware peut activer l'IA tout seul → on force OFF si l'utilisateur ne l'a pas activée
+    if (!m_aiActive && status.tiny.ai_mode != 0) {
+        DeviceManager::instance().cancelAiMode();
+        DeviceManager::instance().setAiAutoZoom(false);
+    }
+
+    // Retour à la position d'accueil si le suivi est perdu pendant ~3 secondes
+    if (m_aiActive && !m_aiSuspended) {
+        if (status.tiny.ai_target == 0) {
+            m_noTargetFrames++;
+            if (m_noTargetFrames == 30) {
+                DeviceManager::instance().gimbalSetAngle(m_homeYaw, m_homePitch);
+                DeviceManager::instance().setZoom(double(m_homeZoom));
+                m_aiStatusLbl->setText("Suivi perdu → position d'accueil");
+                m_aiStatusLbl->setStyleSheet("color:#f38ba8;font-size:10px;");
+            }
+        } else {
+            m_noTargetFrames = 0;
+        }
+    } else {
+        m_noTargetFrames = 0;
+    }
 }
 
 void ControlPanel::setEnabled(bool e)
 {
     QWidget::setEnabled(e);
-    if (!e) {
+    if (e) {
+        // Connexion : s'assurer que le firmware n'a pas activé l'IA en douce
+        DeviceManager::instance().cancelAiMode();
+        DeviceManager::instance().setAiAutoZoom(false);
+    } else {
+        m_aiActive       = false;
+        m_aiSuspended    = false;
+        m_noTargetFrames = 0;
         m_aiStatusLbl->setText("Camera non connectee");
         m_fwVersionLbl->setText("Firmware — non connecte");
     }

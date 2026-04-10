@@ -52,6 +52,16 @@ void DeviceManager::gimbalSetSpeed(int yaw, int pitch)
 void DeviceManager::gimbalReset()
 { if (m_dev) m_dev->aiSetGimbalMotorAngleR(0, 0, 0); }
 
+bool DeviceManager::getGimbalAngle(float &yaw, float &pitch)
+{
+    if (!m_dev) return false;
+    Device::AiGimbalStateInfo info{};
+    if (m_dev->aiGetGimbalStateR(&info) != 0) return false;
+    yaw   = info.yaw_euler;
+    pitch = info.pitch_euler;
+    return true;
+}
+
 void DeviceManager::setZoom(double ratio)
 { if (m_dev) m_dev->cameraSetZoomAbsoluteR(ratio); }
 
@@ -108,3 +118,16 @@ QString DeviceManager::deviceSn() const { return m_currentSn; }
 
 ObsbotProductType DeviceManager::productType() const
 { return m_dev ? m_dev->productType() : ObsbotProdButt; }
+// --- ALIAS POUR LE PILOTAGE ORGANIQUE (Utilisés par VideoWidget) ---
+
+void DeviceManager::rotateGimbal(int yaw, int pitch)
+{
+    // On redirige simplement vers ta fonction existante
+    gimbalSetSpeed(yaw, pitch);
+}
+
+void DeviceManager::stopGimbal()
+{
+    // Stopper le gimbal revient à envoyer une vitesse de 0
+    gimbalSetSpeed(0, 0);
+}

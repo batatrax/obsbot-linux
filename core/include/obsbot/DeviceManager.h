@@ -18,7 +18,15 @@ public:
     void gimbalSetAngle(float yaw, float pitch);
     void gimbalSetSpeed(int yaw, int pitch);
     void gimbalReset();
+    bool getGimbalAngle(float &yaw, float &pitch);
+
+    // Alias pour le pilotage organique du VideoWidget
+    void rotateGimbal(int yaw, int pitch);
+    void stopGimbal();
+
+    // UNE SEULE DÉCLARATION ICI
     void setZoom(double ratio);
+
     void setAiMode(Device::AiWorkModeType mode, Device::AiSubModeType sub = Device::AiSubModeNormal);
     void cancelAiMode();
     void setGesture(int gesture, bool enabled);

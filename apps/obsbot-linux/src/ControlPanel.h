@@ -78,10 +78,14 @@ private:
     QCheckBox      *m_faceFocusCb = nullptr;
     QCheckBox      *m_zoomLockCb  = nullptr;
     QCheckBox      *m_gesture[3]  = {};
-    bool            m_aiActive    = false;
-    bool            m_aiSuspended = false;
-    Device::AiWorkModeType m_savedMode = Device::AiWorkModeNone;
-    Device::AiSubModeType  m_savedSub  = Device::AiSubModeNormal;
+    bool            m_aiActive       = false;
+    bool            m_aiSuspended    = false;
+    Device::AiWorkModeType m_savedMode    = Device::AiWorkModeNone;
+    Device::AiSubModeType  m_savedSub     = Device::AiSubModeNormal;
+    float           m_homeZoom       = 1.0f;
+    float           m_homeYaw        = 0.0f;
+    float           m_homePitch      = 0.0f;
+    int             m_noTargetFrames = 0;
 
     // Image
     QComboBox      *m_hdrCombo      = nullptr;
