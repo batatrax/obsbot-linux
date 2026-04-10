@@ -2674,5 +2674,5 @@
  mdp:/usr/lib/gcc/x86_64-linux-gnu/15/include/stddef.h
 /home/batatrax/Documents/obsbot-linux/apps/obsbot-linux/src/FirmwareWidget.cpp
 /home/batatrax/Documents/obsbot-linux/apps/obsbot-linux/src/VideoWidget.cpp
-/home/batatrax/Documents/obsbot-linux/apps/obsbot-linux/src/VideoWindow.cpp
 /home/batatrax/Documents/obsbot-linux/apps/obsbot-linux/src/ControlPanel.cpp
+/home/batatrax/Documents/obsbot-linux/apps/obsbot-linux/src/VideoWindow.cpp

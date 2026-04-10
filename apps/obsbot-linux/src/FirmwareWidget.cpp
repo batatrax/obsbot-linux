@@ -32,9 +32,9 @@ void FirmwareWidget::buildUi()
 
     auto *info = new QLabel(
         "1. Telechargez le firmware depuis obsbot.com\n"
-        "2. Selectionnez le fichier .bin ci-dessous\n"
+        "2. Selectionnez le fichier .bin\n"
         "3. Cliquez sur Mettre a jour\n\n"
-    info->setProperty("dim", true);
+        "Ne debranchez pas la camera.");
     info->setWordWrap(true);
     ul->addWidget(info);
 
