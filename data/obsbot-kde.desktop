@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=OBSBOT KDE
+Name[fr]=OBSBOT KDE
+Comment=Contrôleur OBSBOT Tiny 2 Lite pour KDE Plasma
+Comment[fr]=Contrôleur OBSBOT Tiny 2 Lite pour KDE Plasma
+Exec=obsbot-kde
+Icon=obsbot-kde
+Type=Application
+Categories=AudioVideo;Video;KDE;Qt;
+Keywords=webcam;camera;obsbot;tracking;ai;plasma;
+StartupNotify=true
+X-KDE-StartupNotify=true

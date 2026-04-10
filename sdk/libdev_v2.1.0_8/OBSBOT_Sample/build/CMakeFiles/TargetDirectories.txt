@@ -1,0 +1,7 @@
+/home/batatrax/Documents/obsbot-controller/sdk/libdev_v2.1.0_8/OBSBOT_Sample/build/CMakeFiles/OBSBOT_Sample.dir
+/home/batatrax/Documents/obsbot-controller/sdk/libdev_v2.1.0_8/OBSBOT_Sample/build/CMakeFiles/edit_cache.dir
+/home/batatrax/Documents/obsbot-controller/sdk/libdev_v2.1.0_8/OBSBOT_Sample/build/CMakeFiles/rebuild_cache.dir
+/home/batatrax/Documents/obsbot-controller/sdk/libdev_v2.1.0_8/OBSBOT_Sample/build/CMakeFiles/list_install_components.dir
+/home/batatrax/Documents/obsbot-controller/sdk/libdev_v2.1.0_8/OBSBOT_Sample/build/CMakeFiles/install.dir
+/home/batatrax/Documents/obsbot-controller/sdk/libdev_v2.1.0_8/OBSBOT_Sample/build/CMakeFiles/install/local.dir
+/home/batatrax/Documents/obsbot-controller/sdk/libdev_v2.1.0_8/OBSBOT_Sample/build/CMakeFiles/install/strip.dir

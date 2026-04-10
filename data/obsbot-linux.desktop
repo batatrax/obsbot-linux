@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=OBSBOT Linux
+Name[fr]=OBSBOT Linux
+Comment=Contrôleur OBSBOT Tiny 2 Lite pour Linux
+Comment[fr]=Contrôleur OBSBOT Tiny 2 Lite pour Linux
+Exec=obsbot-linux
+Icon=obsbot-linux
+Type=Application
+Categories=AudioVideo;Video;GTK;
+Keywords=webcam;camera;obsbot;tracking;ai;
+StartupNotify=true

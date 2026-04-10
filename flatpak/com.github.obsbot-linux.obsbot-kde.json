@@ -1,0 +1,40 @@
+{
+  "app-id": "com.github.obsbot-linux.obsbot-kde",
+  "runtime": "org.kde.Platform",
+  "runtime-version": "6.7",
+  "sdk": "org.kde.Sdk",
+  "command": "obsbot-kde",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=x11",
+    "--socket=wayland",
+    "--device=all",
+    "--socket=pulseaudio",
+    "--share=network",
+    "--filesystem=home",
+    "--talk-name=org.kde.StatusNotifierWatcher",
+    "--env=LD_LIBRARY_PATH=/app/lib"
+  ],
+  "modules": [
+    {
+      "name": "obsbot-kde",
+      "buildsystem": "cmake-ninja",
+      "config-opts": [
+        "-DBUILD_OBSBOT_LINUX=OFF",
+        "-DBUILD_OBSBOT_KDE=ON",
+        "-DCMAKE_BUILD_TYPE=Release"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "."
+        }
+      ],
+      "post-install": [
+        "install -Dm755 sdk/linux/x86_64-release/libdev.so.1.0.3 /app/lib/libdev.so.1.0.3",
+        "ln -sf libdev.so.1.0.3 /app/lib/libdev.so.1",
+        "ln -sf libdev.so.1.0.3 /app/lib/libdev.so"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "app-id": "com.github.obsbot-linux.obsbot-linux",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "24.08",
+  "sdk": "org.freedesktop.Sdk",
+  "command": "obsbot-linux",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=x11",
+    "--socket=wayland",
+    "--device=all",
+    "--socket=pulseaudio",
+    "--share=network",
+    "--filesystem=home",
+    "--env=LD_LIBRARY_PATH=/app/lib"
+  ],
+  "modules": [
+    {
+      "name": "obsbot-linux",
+      "buildsystem": "cmake-ninja",
+      "config-opts": [
+        "-DBUILD_OBSBOT_LINUX=ON",
+        "-DBUILD_OBSBOT_KDE=OFF",
+        "-DCMAKE_BUILD_TYPE=Release"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "."
+        }
+      ],
+      "post-install": [
+        "install -Dm755 sdk/linux/x86_64-release/libdev.so.1.0.3 /app/lib/libdev.so.1.0.3",
+        "ln -sf libdev.so.1.0.3 /app/lib/libdev.so.1",
+        "ln -sf libdev.so.1.0.3 /app/lib/libdev.so"
+      ]
+    }
+  ]
+}
