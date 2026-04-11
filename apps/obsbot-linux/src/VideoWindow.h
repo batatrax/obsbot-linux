@@ -1,12 +1,6 @@
 /**
  * @file VideoWindow.h
  * @brief Fenetre video independante et detachable.
- *
- * - Redimensionnable librement
- * - Always on top (optionnel)
- * - HUD overlay sur les bords (semi-transparent, masquable)
- * - Selecteur qualite (resolution + format)
- * - Boutons principaux incrustes dans la video
  */
 #pragma once
 #include <QWidget>
@@ -14,12 +8,11 @@
 
 class QCamera;
 class QMediaCaptureSession;
-class QVideoWidget;
+class QVideoSink;
 class QImageCapture;
 class QLabel;
 class QPushButton;
 class QComboBox;
-class QPropertyAnimation;
 
 class VideoWindow : public QWidget
 {
@@ -42,11 +35,7 @@ public slots:
     void onDeviceDisconnected();
 
 signals:
-    void wakeupRequested();
-    void shutdownRequested();
     void pauseToggled();
-    void photoRequested();
-    void qualityChanged(const QString &resolution, const QString &format);
 
 protected:
     void mouseMoveEvent(QMouseEvent *e) override;
@@ -66,17 +55,19 @@ private:
     void applyQuality();
 
     // Video
-    QCamera              *m_camera   = nullptr;
-    QMediaCaptureSession *m_session  = nullptr;
-    QVideoWidget         *m_view     = nullptr;
-    QImageCapture        *m_capture  = nullptr;
-    bool                  m_paused   = false;
+    QCamera              *m_camera     = nullptr;
+    QMediaCaptureSession *m_session    = nullptr;
+    QVideoSink           *m_sink       = nullptr;
+    QImageCapture        *m_capture    = nullptr;
+    QLabel               *m_videoLabel        = nullptr;
+    bool                  m_paused            = false;
+    bool                  m_sleeping          = false;
+    QString               m_pendingCapturePath;
 
-    // HUD overlay
-    QWidget     *m_hudTop    = nullptr;  // barre du haut (statut)
-    QWidget     *m_hudBottom = nullptr;  // barre du bas (boutons + qualite)
-    QPushButton *m_wakeBtn   = nullptr;
-    QPushButton *m_shutBtn   = nullptr;
+    // HUD
+    QWidget     *m_hudTop    = nullptr;
+    QWidget     *m_hudBottom = nullptr;
+    QPushButton *m_powerBtn  = nullptr;
     QPushButton *m_pauseBtn  = nullptr;
     QPushButton *m_photoBtn  = nullptr;
     QPushButton *m_hudToggle = nullptr;
@@ -85,6 +76,5 @@ private:
     bool         m_hudVisible = true;
     QTimer      *m_hudTimer  = nullptr;
 
-    // Style boutons HUD
     static QString hudBtnStyle();
 };

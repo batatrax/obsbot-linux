@@ -1,5 +1,8 @@
 #include <QApplication>
 #include <QIcon>
+#include <QLockFile>
+#include <QDir>
+#include <QMessageBox>
 #include "MainWindow.h"
 #include "Style.h"
 
@@ -12,6 +15,15 @@ int main(int argc, char *argv[])
     app.setOrganizationDomain("github.com/obsbot-linux");
     app.setWindowIcon(QIcon::fromTheme("obsbot-linux"));
     app.setStyleSheet(ObsbotStyle::globalStyleSheet());
+
+    // Empêcher les instances multiples
+    QLockFile lockFile(QDir::tempPath() + "/obsbot-linux.lock");
+    if (!lockFile.tryLock(100)) {
+        QMessageBox::warning(nullptr, "OBSBOT Linux",
+            "Une instance est déjà en cours d'exécution.");
+        return 1;
+    }
+
     MainWindow w;
     w.show();
     return app.exec();

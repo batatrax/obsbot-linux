@@ -22,6 +22,7 @@
 #include <QKeyEvent>
 #include <QDesktopServices>
 #include <QUrl>
+#include <QSettings>
 
 // ScrollArea qui ne capture pas les fleches clavier
 class NoArrowScrollArea : public QScrollArea {
@@ -37,7 +38,14 @@ protected:
     }
 };
 
-ControlPanel::ControlPanel(QWidget *parent) : QWidget(parent) { buildUi(); }
+ControlPanel::ControlPanel(QWidget *parent) : QWidget(parent)
+{
+    buildUi();
+    QSettings s("obsbot-linux", "ControlPanel");
+    m_homeYaw   = s.value("home/yaw",   0.0f).toFloat();
+    m_homePitch = s.value("home/pitch", 0.0f).toFloat();
+    m_homeZoom  = s.value("home/zoom",  1.0f).toFloat();
+}
 
 void ControlPanel::buildUi()
 {
@@ -130,6 +138,10 @@ QWidget* ControlPanel::buildGimbalSection()
             m_homeYaw   = yaw;
             m_homePitch = pitch;
             m_homeZoom  = m_zoom->value() / 100.0f;
+            QSettings s("obsbot-linux", "ControlPanel");
+            s.setValue("home/yaw",   m_homeYaw);
+            s.setValue("home/pitch", m_homePitch);
+            s.setValue("home/zoom",  m_homeZoom);
             m_aiStatusLbl->setText(
                 QString("Accueil: %1x  Pan:%2°  Tilt:%3°")
                     .arg(double(m_homeZoom), 0, 'f', 1)

@@ -2,10 +2,13 @@
 #include <obsbot/DeviceManager.h>
 #include <QCamera>
 #include <QMediaCaptureSession>
-#include <QVideoWidget>
+#include <QVideoSink>
+#include <QVideoFrame>
+#include <QImageCapture>
 #include <QMediaDevices>
 #include <QCameraDevice>
-#include <QImageCapture>
+#include <QCameraFormat>
+#include <QVideoFrameFormat>
 #include <QLabel>
 #include <QPushButton>
 #include <QComboBox>
@@ -16,7 +19,15 @@
 #include <QStandardPaths>
 #include <QDateTime>
 #include <QDir>
-#include <QCameraFormat>
+
+// Downscale progressif : deux fois plus net qu'un seul passage SmoothTransformation
+static QImage sharpScale(QImage img, const QSize &target)
+{
+    while (img.width() > target.width() * 2 || img.height() > target.height() * 2)
+        img = img.scaled(img.width() / 2, img.height() / 2,
+                         Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    return img.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+}
 
 VideoWindow::VideoWindow(QWidget *parent)
     : QWidget(parent, Qt::Window)
@@ -25,7 +36,6 @@ VideoWindow::VideoWindow(QWidget *parent)
     setMinimumSize(320, 240);
     resize(480, 320);
     setStyleSheet("background:#000;");
-    // Always on top par defaut
     setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint);
     buildUi();
 
@@ -52,19 +62,29 @@ void VideoWindow::buildUi()
     root->setContentsMargins(0,0,0,0);
     root->setSpacing(0);
 
-    m_view = new QVideoWidget(this);
-    m_view->setStyleSheet("background:#000;");
-    m_view->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    root->addWidget(m_view);
+    m_videoLabel = new QLabel(this);
+    m_videoLabel->setAlignment(Qt::AlignCenter);
+    m_videoLabel->setStyleSheet("background:#000;");
+    m_videoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    root->addWidget(m_videoLabel);
+
+    m_sink = new QVideoSink(this);
+    connect(m_sink, &QVideoSink::videoFrameChanged,
+            this, [this](const QVideoFrame &frame) {
+        if (!frame.isValid()) return;
+        QImage img = frame.toImage().flipped(Qt::Horizontal);
+        if (img.isNull()) return;
+        m_videoLabel->setPixmap(QPixmap::fromImage(
+            sharpScale(std::move(img), m_videoLabel->size())));
+    });
 
     buildHud();
     setMouseTracking(true);
-    m_view->setMouseTracking(true);
+    m_videoLabel->setMouseTracking(true);
 }
 
 void VideoWindow::buildHud()
 {
-    // ── HUD haut : statut ────────────────────────────────────────────────────
     m_hudTop = new QWidget(this);
     m_hudTop->setStyleSheet("background:rgba(0,0,0,120);");
     m_hudTop->setFixedHeight(28);
@@ -87,7 +107,6 @@ void VideoWindow::buildHud()
     });
     tl->addWidget(m_hudToggle);
 
-    // ── HUD bas : boutons + qualite ───────────────────────────────────────────
     m_hudBottom = new QWidget(this);
     m_hudBottom->setStyleSheet("background:rgba(0,0,0,120);");
     m_hudBottom->setFixedHeight(36);
@@ -95,25 +114,22 @@ void VideoWindow::buildHud()
     bl->setContentsMargins(6,4,6,4);
     bl->setSpacing(4);
 
-    m_wakeBtn  = new QPushButton("⏻");
-    m_shutBtn  = new QPushButton("⏼");
+    m_powerBtn = new QPushButton("⏼");
     m_pauseBtn = new QPushButton("⏸");
     m_photoBtn = new QPushButton("📷");
 
-    for (auto *b : {m_wakeBtn, m_shutBtn, m_pauseBtn, m_photoBtn}) {
+    for (auto *b : {m_powerBtn, m_pauseBtn, m_photoBtn}) {
         b->setFixedSize(30, 26);
         b->setStyleSheet(hudBtnStyle());
         bl->addWidget(b);
     }
 
-    m_wakeBtn->setToolTip("Reveiller");
-    m_shutBtn->setToolTip("Eteindre");
+    m_powerBtn->setToolTip("Mettre en veille");
     m_pauseBtn->setToolTip("Pause / Reprendre");
     m_photoBtn->setToolTip("Capturer photo");
 
     bl->addStretch();
 
-    // Selecteur qualite compact
     m_qualCombo = new QComboBox;
     m_qualCombo->setFixedHeight(26);
     m_qualCombo->setStyleSheet(
@@ -123,15 +139,29 @@ void VideoWindow::buildHud()
         "QComboBox::drop-down{border:none;width:14px;}"
         "QComboBox QAbstractItemView{background:#24243e;color:#cdd6f4;"
         "selection-background-color:#89b4fa;selection-color:#1e1e2e;}");
-    m_qualCombo->addItem("1080p MJPEG");
+    // 720p par défaut : moins de downscaling → image plus nette en aperçu
     m_qualCombo->addItem("720p MJPEG");
+    m_qualCombo->addItem("1080p MJPEG");
     m_qualCombo->addItem("4K MJPEG");
     m_qualCombo->addItem("1080p H264");
     m_qualCombo->addItem("720p H264");
     bl->addWidget(m_qualCombo);
 
-    connect(m_wakeBtn,  &QPushButton::clicked, this, &VideoWindow::wakeupRequested);
-    connect(m_shutBtn,  &QPushButton::clicked, this, &VideoWindow::shutdownRequested);
+    connect(m_powerBtn, &QPushButton::clicked, this, [this]{
+        if (m_sleeping) {
+            DeviceManager::instance().setDevRunStatus(Device::DevStatusRun);
+            m_sleeping = false;
+            m_powerBtn->setText("⏼");
+            m_powerBtn->setToolTip("Mettre en veille");
+            QTimer::singleShot(800, this, &VideoWindow::startCamera);
+        } else {
+            stopCamera();
+            DeviceManager::instance().setDevRunStatus(Device::DevStatusSleep);
+            m_sleeping = true;
+            m_powerBtn->setText("⏻");
+            m_powerBtn->setToolTip("Reveiller");
+        }
+    });
     connect(m_pauseBtn, &QPushButton::clicked, this, [this]{
         m_paused = !m_paused;
         if (m_paused) { pause();  m_pauseBtn->setText("▶"); }
@@ -139,7 +169,9 @@ void VideoWindow::buildHud()
         emit pauseToggled();
     });
     connect(m_photoBtn, &QPushButton::clicked, this, [this]{
-        QString dir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+        if (!m_capture || !m_capture->isReadyForCapture()) return;
+        QString dir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)
+                      + "/OBSBOT";
         QDir().mkpath(dir);
         QString path = dir + "/OBSBOT_" +
             QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss") + ".jpg";
@@ -170,7 +202,6 @@ void VideoWindow::setHudVisible(bool visible)
     m_hudVisible = visible;
     if (m_hudTop)    m_hudTop->setVisible(visible);
     if (m_hudBottom) m_hudBottom->setVisible(visible);
-    // Afficher seulement le toggle quand HUD cache
     if (!visible) {
         auto *show = new QPushButton("⊕", this);
         show->setObjectName("showHudBtn");
@@ -188,17 +219,13 @@ void VideoWindow::setHudVisible(bool visible)
     }
 }
 
-void VideoWindow::enterEvent(QEnterEvent *) { m_hudTimer->stop(); }
-void VideoWindow::leaveEvent(QEvent *)
-{ if (m_hudVisible) m_hudTimer->start(); }
+void VideoWindow::enterEvent(QEnterEvent *)  { m_hudTimer->stop(); }
+void VideoWindow::leaveEvent(QEvent *)       { if (m_hudVisible) m_hudTimer->start(); }
 void VideoWindow::mouseMoveEvent(QMouseEvent *)
 { if (!m_hudVisible) return; m_hudTimer->stop(); m_hudTimer->start(); }
 void VideoWindow::mouseDoubleClickEvent(QMouseEvent *)
-{
-    // Double-clic : basculer plein ecran
-    if (isFullScreen()) showNormal(); else showFullScreen();
-}
-void VideoWindow::onHudTimeout() {} // On garde le HUD visible
+{ if (isFullScreen()) showNormal(); else showFullScreen(); }
+void VideoWindow::onHudTimeout() {}
 
 // ── Camera ────────────────────────────────────────────────────────────────────
 
@@ -217,10 +244,23 @@ void VideoWindow::startCamera()
     m_session = new QMediaCaptureSession(this);
     m_capture = new QImageCapture(this);
     m_session->setCamera(m_camera);
-    m_session->setVideoOutput(m_view);
+    m_session->setVideoOutput(m_sink);
     m_session->setImageCapture(m_capture);
+
+    // Sauvegarder la photo avec le même flip horizontal que le preview
+    connect(m_capture, &QImageCapture::imageCaptured,
+            this, [this](int, const QImage &img) {
+        if (m_pendingCapturePath.isEmpty()) return;
+        img.flipped(Qt::Horizontal).save(m_pendingCapturePath, "JPEG", 95);
+        m_pendingCapturePath.clear();
+    });
+
     applyQuality();
     m_camera->start();
+
+    if (m_camera->isFocusModeSupported(QCamera::FocusModeAuto))
+        m_camera->setFocusMode(QCamera::FocusModeAuto);
+
     m_paused = false;
     m_pauseBtn->setText("⏸");
 }
@@ -233,6 +273,7 @@ void VideoWindow::stopCamera()
         delete m_session; m_session = nullptr;
         delete m_camera;  m_camera  = nullptr;
     }
+    m_videoLabel->clear();
 }
 
 void VideoWindow::pause()  { if (m_camera) m_camera->stop(); }
@@ -240,8 +281,9 @@ void VideoWindow::resume() { if (m_camera) m_camera->start(); }
 
 bool VideoWindow::captureToFile(const QString &path)
 {
-    if (!m_capture) return false;
-    m_capture->captureToFile(path);
+    if (!m_capture || !m_capture->isReadyForCapture()) return false;
+    m_pendingCapturePath = path;
+    m_capture->capture();  // imageCaptured → flip → save manuel
     return true;
 }
 
@@ -250,9 +292,25 @@ void VideoWindow::onQualityChanged() { if (m_camera) { stopCamera(); startCamera
 void VideoWindow::applyQuality()
 {
     if (!m_camera) return;
-    QString sel = m_qualCombo->currentText();
-    // La resolution sera appliquee par Qt selon les formats disponibles
-    // On peut affiner avec QCameraFormat si necessaire
+    const QString sel = m_qualCombo->currentText();
+
+    QSize targetRes;
+    if (sel.contains("4K"))        targetRes = QSize(3840, 2160);
+    else if (sel.contains("1080")) targetRes = QSize(1920, 1080);
+    else                           targetRes = QSize(1280, 720);
+
+    const bool wantMjpeg = sel.contains("MJPEG");
+
+    QCameraFormat best;
+    for (const auto &fmt : m_camera->cameraDevice().videoFormats()) {
+        if (fmt.resolution() != targetRes) continue;
+        const bool isMjpeg = (fmt.pixelFormat() == QVideoFrameFormat::Format_Jpeg);
+        if (isMjpeg != wantMjpeg) continue;
+        if (best.isNull() || fmt.maxFrameRate() > best.maxFrameRate())
+            best = fmt;
+    }
+    if (!best.isNull())
+        m_camera->setCameraFormat(best);
 }
 
 void VideoWindow::onDeviceConnected()
@@ -261,19 +319,20 @@ void VideoWindow::onDeviceConnected()
     m_statusLbl->setText(
         QString("● %1  FW %2").arg(dm.deviceName(), dm.deviceVersion()));
     m_statusLbl->setStyleSheet("color:rgba(166,227,161,220);font-size:11px;font-weight:bold;");
-    m_wakeBtn->setEnabled(true);
-    m_shutBtn->setEnabled(true);
+    m_powerBtn->setEnabled(true);
     m_pauseBtn->setEnabled(true);
     m_photoBtn->setEnabled(true);
-    startCamera();
+    m_sleeping = false;
+    m_powerBtn->setText("⏼");
+    m_powerBtn->setToolTip("Mettre en veille");
+    QTimer::singleShot(800, this, &VideoWindow::startCamera);
 }
 
 void VideoWindow::onDeviceDisconnected()
 {
     m_statusLbl->setText("Camera deconnectee");
     m_statusLbl->setStyleSheet("color:rgba(243,139,168,200);font-size:11px;");
-    m_wakeBtn->setEnabled(false);
-    m_shutBtn->setEnabled(false);
+    m_powerBtn->setEnabled(false);
     m_pauseBtn->setEnabled(false);
     m_photoBtn->setEnabled(false);
     stopCamera();

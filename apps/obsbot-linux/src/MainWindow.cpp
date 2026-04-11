@@ -10,6 +10,7 @@
 #include <QCloseEvent>
 #include <QKeyEvent>
 #include <QApplication>
+#include <unistd.h>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
@@ -24,14 +25,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(&dm, &DeviceManager::deviceDisconnected, this, &MainWindow::onDeviceDisconnected);
     connect(&dm, &DeviceManager::statusUpdated,      this, &MainWindow::onStatusUpdated);
 
-    // Connexion wakeup/shutdown depuis la fenetre video
-    connect(m_videoWin, &VideoWindow::wakeupRequested, this, []{
-        DeviceManager::instance().setDevRunStatus(Device::DevStatusRun);
-    });
-    connect(m_videoWin, &VideoWindow::shutdownRequested, this, []{
-        DeviceManager::instance().setDevRunStatus(Device::DevStatusSleep);
-    });
-
     dm.start();
     updateConnectionState(false);
 
@@ -41,12 +34,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    // Eteindre camera sans dialogue et fermer
+    event->accept();
     if (DeviceManager::instance().isConnected())
         DeviceManager::instance().setDevRunStatus(Device::DevStatusSleep);
     DeviceManager::instance().stop();
     m_videoWin->close();
-    event->accept();
+    // Le SDK OBSBOT maintient des threads natifs qui bloquent tout cleanup.
+    // _exit() contourne les handlers atexit et passe directement au noyau :
+    // le kernel ferme tous les FDs (/dev/video*) immédiatement.
+    _exit(0);
 }
 
 void MainWindow::buildUi()
@@ -108,6 +104,8 @@ void MainWindow::onDeviceConnected(const QString &sn)
     m_devLabel->setStyleSheet("color:#a6e3a1;font-size:11px;font-weight:bold;");
     if (auto *d = findChild<QLabel*>("statusDot"))
         d->setStyleSheet("color:#a6e3a1;font-size:9px;");
+    // Réveiller la caméra au cas où elle était en veille (fermeture précédente)
+    dm.setDevRunStatus(Device::DevStatusRun);
     updateConnectionState(true);
     m_videoWin->onDeviceConnected();
 }
