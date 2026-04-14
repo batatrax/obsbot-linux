@@ -1,5 +1,19 @@
 #!/bin/sh
 set -e
-# Remove udev rule / Supprimer la règle udev
+
+# ── udev rule ─────────────────────────────────────────────────────────────────
 rm -f /etc/udev/rules.d/99-obsbot.rules
 udevadm control --reload-rules 2>/dev/null || true
+
+# ── v4l2loopback ──────────────────────────────────────────────────────────────
+rm -f /etc/modprobe.d/v4l2loopback.conf
+rm -f /etc/modules-load.d/v4l2loopback.conf
+
+# ── Firefox policies ──────────────────────────────────────────────────────────
+for f in /etc/firefox/policies/policies.json \
+          /var/snap/firefox/common/distribution/policies.json; do
+    if [ -f "$f" ] && grep -q "allow-pipewire" "$f" 2>/dev/null; then
+        rm -f "$f"
+        rmdir "$(dirname "$f")" 2>/dev/null || true
+    fi
+done

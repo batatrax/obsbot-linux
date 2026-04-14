@@ -1,5 +1,67 @@
 # Changelog / Journal des modifications
 
+## [1.2.0] — 2026-04-14
+
+### English
+
+#### Virtual camera pipeline overhaul
+- **I420 format** (yuv420p): ffmpeg now outputs I420, the native format of libwebrtc.
+  NV12 and YUYV422 caused silent black frames in Firefox WebRTC — I420 is universally accepted.
+- **`exclusive_caps=0`**: v4l2loopback now exposes separate OUTPUT (ffmpeg) and CAPTURE
+  (WirePlumber/Firefox) interfaces, eliminating EBUSY conflicts.
+- **Renamed virtual device**: `OBSBot Virtual` → `OBSBot Virtual Camera` for clarity
+  in browser camera selectors.
+
+#### Firefox integration
+- **Auto-configured via package**: `media.webrtc.camera.allow-pipewire=true` set via
+  Firefox enterprise policies (native deb + snap) — no manual `about:config` change needed.
+- Documented manual setup for Firefox Flatpak.
+
+#### Reliability
+- **SIGTERM handler** in `main.cpp`: `pkill -f obsbot-linux` now properly terminates
+  the child ffmpeg process via Qt destructor chain.
+- **Orphan cleanup** at virtual cam startup: any lingering ffmpeg from a crashed
+  previous session is killed before launching a new one.
+- **Virtual device filter** in `startCamera()` and `startPipeWireBridge()`: prevents
+  the app from accidentally selecting `/dev/video99` as the real camera.
+
+#### Package improvements
+- DEB/RPM post-install scripts now configure v4l2loopback boot parameters and
+  Firefox PipeWire policy automatically.
+- `.desktop` file `Exec` path corrected from hardcoded dev path to `obsbot-linux`.
+
+---
+
+### Français
+
+#### Pipeline caméra virtuelle refondu
+- **Format I420** (yuv420p) : ffmpeg sort maintenant en I420, format natif de libwebrtc.
+  NV12 et YUYV422 produisaient un écran noir silencieux dans Firefox — I420 est universellement accepté.
+- **`exclusive_caps=0`** : v4l2loopback expose désormais des interfaces OUTPUT (ffmpeg) et CAPTURE
+  (WirePlumber/Firefox) séparées, éliminant les conflits EBUSY.
+- **Renommage du périphérique virtuel** : `OBSBot Virtual` → `OBSBot Virtual Camera` pour plus
+  de clarté dans les sélecteurs de caméra des navigateurs.
+
+#### Intégration Firefox
+- **Configuré automatiquement via le paquet** : `media.webrtc.camera.allow-pipewire=true` appliqué
+  via les politiques Firefox entreprise (deb natif + snap) — aucun changement `about:config` nécessaire.
+- Configuration manuelle documentée pour Firefox Flatpak.
+
+#### Fiabilité
+- **Gestionnaire SIGTERM** dans `main.cpp` : `pkill -f obsbot-linux` termine maintenant correctement
+  le processus ffmpeg enfant via la chaîne de destructeurs Qt.
+- **Nettoyage des orphelins** au démarrage de la cam virtuelle : tout ffmpeg restant d'une session
+  précédente plantée est tué avant d'en lancer un nouveau.
+- **Filtre périphérique virtuel** dans `startCamera()` et `startPipeWireBridge()` : empêche l'app
+  de sélectionner accidentellement `/dev/video99` comme vraie caméra.
+
+#### Améliorations du paquet
+- Les scripts post-install DEB/RPM configurent maintenant automatiquement v4l2loopback au démarrage
+  et la politique PipeWire Firefox.
+- Chemin `Exec` du fichier `.desktop` corrigé (chemin absolu dev → `obsbot-linux`).
+
+---
+
 ## [1.1.0] — 2026-04-14
 
 ### English

@@ -1,6 +1,42 @@
 #!/bin/sh
 set -e
-# Install udev rule for OBSBOT USB access / Installer la règle udev pour l'accès USB OBSBOT
+
+# ── udev rule — OBSBOT USB access without root ────────────────────────────────
 install -m 0644 /usr/share/obsbot-linux/99-obsbot.rules /etc/udev/rules.d/
 udevadm control --reload-rules 2>/dev/null || true
 udevadm trigger 2>/dev/null || true
+
+# ── v4l2loopback — create /dev/video99 at boot ───────────────────────────────
+# exclusive_caps=0: exposes separate OUTPUT (ffmpeg) and CAPTURE (WirePlumber)
+# interfaces on the same device, avoiding EBUSY conflicts.
+mkdir -p /etc/modprobe.d /etc/modules-load.d
+echo 'options v4l2loopback video_nr=99 card_label="OBSBot Virtual Camera" exclusive_caps=0' \
+    > /etc/modprobe.d/v4l2loopback.conf
+echo 'v4l2loopback' > /etc/modules-load.d/v4l2loopback.conf
+
+# ── Firefox — enable PipeWire camera backend ─────────────────────────────────
+# media.webrtc.camera.allow-pipewire=true is required for the virtual camera
+# (OBSBot Virtual Camera) to be visible in Firefox getUserMedia.
+
+FIREFOX_POLICY='{
+  "policies": {
+    "Preferences": {
+      "media.webrtc.camera.allow-pipewire": {
+        "Value": true,
+        "Status": "default"
+      }
+    }
+  }
+}'
+
+# Native deb Firefox
+if [ -f /usr/bin/firefox ] || [ -d /usr/lib/firefox ]; then
+    mkdir -p /etc/firefox/policies
+    printf '%s\n' "$FIREFOX_POLICY" > /etc/firefox/policies/policies.json
+fi
+
+# Snap Firefox
+if [ -d /var/snap/firefox/common ]; then
+    mkdir -p /var/snap/firefox/common/distribution
+    printf '%s\n' "$FIREFOX_POLICY" > /var/snap/firefox/common/distribution/policies.json
+fi

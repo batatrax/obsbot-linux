@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
-project(ObsbotLinux VERSION 1.1.0 LANGUAGES CXX)
+project(ObsbotLinux VERSION 1.2.0 LANGUAGES CXX)
 
 # ── CPack (DEB + RPM) ─────────────────────────────────────────────────────────
 set(CPACK_PACKAGE_NAME              "obsbot-linux")
 set(CPACK_PACKAGE_VENDOR            "batatrax")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "Linux controller for OBSBOT Tiny 2 Lite camera / Contrôleur Linux pour caméra OBSBOT Tiny 2 Lite")
-set(CPACK_PACKAGE_VERSION           "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_VERSION           "1.2.0")
 set(CPACK_PACKAGE_CONTACT           "https://github.com/batatrax/obsbot-linux")
 set(CPACK_PACKAGE_HOMEPAGE_URL      "https://github.com/batatrax/obsbot-linux")
 set(CPACK_RESOURCE_FILE_LICENSE     "${CMAKE_SOURCE_DIR}/LICENSE")
