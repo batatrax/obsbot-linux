@@ -1,0 +1,5 @@
+# OBSBOT USB device permissions
+# Grants read/write access to OBSBOT cameras without requiring root.
+# Install: sudo cp 99-obsbot.rules /etc/udev/rules.d/
+# Reload:  sudo udevadm control --reload-rules && sudo udevadm trigger
+SUBSYSTEM=="usb", ATTR{idVendor}=="2bd9", MODE="0666", GROUP="plugdev"

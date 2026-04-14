@@ -33,6 +33,7 @@ public:
 public slots:
     void onDeviceConnected();
     void onDeviceDisconnected();
+    void onVirtualCamToggled(bool active);
 
 signals:
     void pauseToggled();
@@ -60,8 +61,13 @@ private:
     QVideoSink           *m_sink       = nullptr;
     QImageCapture        *m_capture    = nullptr;
     QLabel               *m_videoLabel        = nullptr;
+    QLabel               *m_virtualMsgLbl     = nullptr;
     bool                  m_paused            = false;
     bool                  m_sleeping          = false;
+    bool                  m_virtualCamActive  = false;
+    bool                  m_mirrorEnabled     = true;
+    bool                  m_flipV             = false;
+    float                 m_currentZoom       = 1.0f;
     QString               m_pendingCapturePath;
 
     // HUD
@@ -70,7 +76,10 @@ private:
     QPushButton *m_powerBtn  = nullptr;
     QPushButton *m_pauseBtn  = nullptr;
     QPushButton *m_photoBtn  = nullptr;
+    QPushButton *m_mirrorBtn = nullptr;
+    QPushButton *m_flipVBtn  = nullptr;
     QPushButton *m_hudToggle = nullptr;
+    QLabel      *m_zoomOverlay = nullptr;
     QComboBox   *m_qualCombo = nullptr;
     QLabel      *m_statusLbl = nullptr;
     bool         m_hudVisible = true;

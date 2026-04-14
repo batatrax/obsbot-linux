@@ -9,15 +9,15 @@
 #include <QHBoxLayout>
 #include <QCloseEvent>
 #include <QKeyEvent>
+#include <QTimer>
 #include <QApplication>
 #include <unistd.h>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
-    setWindowTitle("OBSBOT Linux — Controles");
+    setWindowTitle("OBSBOT Linux — Controls");
     // Fenetre etroite — panneau de controle uniquement
-    setMinimumSize(300, 500);
-    resize(340, 720);
+    setMinimumSize(300, 400);
     buildUi();
 
     auto &dm = DeviceManager::instance();
@@ -28,20 +28,35 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     dm.start();
     updateConnectionState(false);
 
-    // Afficher la fenetre video au demarrage
+    resize(360, 660);
+
+    // Afficher la fenetre video au demarrage, positionnée juste à droite du panneau.
+    // 300ms : le WM (KWin/Xwayland) a eu le temps de placer et dimensionner la fenêtre.
     m_videoWin->show();
+    QTimer::singleShot(300, this, [this]{
+        const QRect fg = frameGeometry();
+        m_videoWin->move(fg.right() + 8, fg.top());
+    });
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     event->accept();
+
+    // 1. Tuer ffmpeg — waitForFinished garanti dans stopVirtualCam()
+    if (m_panel) m_panel->stopVirtualCam();
+
+    // 2. Libérer /dev/video0 explicitement (évite que le noyau le fasse à notre place)
+    if (m_videoWin) m_videoWin->stopCamera();
+
+    // 3. Mettre la caméra en veille matérielle
     if (DeviceManager::instance().isConnected())
         DeviceManager::instance().setDevRunStatus(Device::DevStatusSleep);
+
     DeviceManager::instance().stop();
-    m_videoWin->close();
-    // Le SDK OBSBOT maintient des threads natifs qui bloquent tout cleanup.
-    // _exit() contourne les handlers atexit et passe directement au noyau :
-    // le kernel ferme tous les FDs (/dev/video*) immédiatement.
+
+    // 4. Le SDK OBSBOT maintient des threads natifs qui bloquent tout cleanup.
+    //    _exit() passe directement au noyau — tous les FDs restants sont fermés.
     _exit(0);
 }
 
@@ -64,16 +79,19 @@ void MainWindow::buildUi()
     dot->setObjectName("statusDot");
     dot->setStyleSheet("color:#f38ba8;font-size:9px;");
 
-    m_devLabel = new QLabel("En attente...");
+    m_devLabel = new QLabel("Waiting...");
     m_devLabel->setStyleSheet("color:#a6adc8;font-size:11px;");
 
     // Bouton afficher/cacher la fenetre video
-    m_videoBtn = new QPushButton("📺");
-    m_videoBtn->setFixedSize(26,22);
-    m_videoBtn->setToolTip("Afficher / masquer la fenetre video");
+    m_videoBtn = new QPushButton("🎥 Hide");
+    m_videoBtn->setFixedHeight(22);
+    m_videoBtn->setMinimumWidth(85);
+    m_videoBtn->setToolTip(
+        "Show / hide the video window.\n"
+        "The window opens automatically to the right of the panel.");
     m_videoBtn->setStyleSheet(
         "QPushButton{background:#24243e;color:#89b4fa;border:1px solid #45475a;"
-        "border-radius:4px;font-size:12px;}"
+        "border-radius:4px;font-size:11px;padding:0 6px;}"
         "QPushButton:hover{background:#313244;}");
 
     sl->addWidget(dot);
@@ -89,11 +107,17 @@ void MainWindow::buildUi()
     // ── Fenetre video independante ────────────────────────────────────────────
     m_videoWin = new VideoWindow;
 
+    connect(m_panel, &ControlPanel::virtualCamToggled,
+            m_videoWin, &VideoWindow::onVirtualCamToggled);
+
     connect(m_videoBtn, &QPushButton::clicked, this, [this]{
-        if (m_videoWin->isVisible())
+        if (m_videoWin->isVisible()) {
             m_videoWin->hide();
-        else
+            m_videoBtn->setText("🎥 Show");
+        } else {
             m_videoWin->show();
+            m_videoBtn->setText("🎥 Hide");
+        }
     });
 }
 
@@ -112,7 +136,7 @@ void MainWindow::onDeviceConnected(const QString &sn)
 
 void MainWindow::onDeviceDisconnected(const QString &)
 {
-    m_devLabel->setText("En attente...");
+    m_devLabel->setText("Waiting...");
     m_devLabel->setStyleSheet("color:#a6adc8;font-size:11px;");
     if (auto *d = findChild<QLabel*>("statusDot"))
         d->setStyleSheet("color:#f38ba8;font-size:9px;");

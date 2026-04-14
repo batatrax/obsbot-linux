@@ -40,3 +40,5 @@ install(FILES "${CMAKE_SOURCE_DIR}/data/icons/hicolor/scalable/apps/obsbot-linux
         DESTINATION share/icons/hicolor/scalable/apps)
 install(FILES "${CMAKE_SOURCE_DIR}/data/obsbot-linux.desktop"
         DESTINATION share/applications)
+install(FILES "${CMAKE_SOURCE_DIR}/packaging/99-obsbot.rules"
+        DESTINATION share/obsbot-linux)

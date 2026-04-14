@@ -1,5 +1,42 @@
 cmake_minimum_required(VERSION 3.20)
-project(ObsbotLinux VERSION 1.0.0 LANGUAGES CXX)
+project(ObsbotLinux VERSION 1.1.0 LANGUAGES CXX)
+
+# ── CPack (DEB + RPM) ─────────────────────────────────────────────────────────
+set(CPACK_PACKAGE_NAME              "obsbot-linux")
+set(CPACK_PACKAGE_VENDOR            "batatrax")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+    "Linux controller for OBSBOT Tiny 2 Lite camera / Contrôleur Linux pour caméra OBSBOT Tiny 2 Lite")
+set(CPACK_PACKAGE_VERSION           "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_CONTACT           "https://github.com/batatrax/obsbot-linux")
+set(CPACK_PACKAGE_HOMEPAGE_URL      "https://github.com/batatrax/obsbot-linux")
+set(CPACK_RESOURCE_FILE_LICENSE     "${CMAKE_SOURCE_DIR}/LICENSE")
+set(CPACK_STRIP_FILES               ON)
+set(CPACK_PACKAGE_SECTION          "video")
+
+# ── DEB ───────────────────────────────────────────────────────────────────────
+set(CPACK_DEBIAN_PACKAGE_DEPENDS
+    "libqt6core6 (>= 6.4), libqt6widgets6 (>= 6.4), libqt6multimedia6 (>= 6.4), libusb-1.0-0")
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "v4l2loopback-dkms, ffmpeg")
+set(CPACK_DEBIAN_PACKAGE_SECTION    "video")
+set(CPACK_DEBIAN_PACKAGE_PRIORITY   "optional")
+set(CPACK_DEBIAN_FILE_NAME          "DEB-DEFAULT")
+# Install udev rule via DEB post-install
+set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+    "${CMAKE_SOURCE_DIR}/packaging/deb/postinst;${CMAKE_SOURCE_DIR}/packaging/deb/prerm")
+
+# ── RPM ───────────────────────────────────────────────────────────────────────
+set(CPACK_RPM_PACKAGE_LICENSE       "GPLv3")
+set(CPACK_RPM_PACKAGE_GROUP         "Applications/Multimedia")
+set(CPACK_RPM_PACKAGE_REQUIRES
+    "qt6-qtbase >= 6.4, qt6-qtmultimedia >= 6.4, libusb1")
+set(CPACK_RPM_PACKAGE_SUGGESTS      "v4l2loopback, ffmpeg")
+set(CPACK_RPM_FILE_NAME             "RPM-DEFAULT")
+set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE
+    "${CMAKE_SOURCE_DIR}/packaging/rpm/post_install.sh")
+set(CPACK_RPM_PRE_UNINSTALL_SCRIPT_FILE
+    "${CMAKE_SOURCE_DIR}/packaging/rpm/pre_uninstall.sh")
+
+include(CPack)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

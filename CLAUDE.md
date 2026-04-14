@@ -63,11 +63,19 @@ status.tiny.ai_mode      // mode IA actif (0 = off)
 - Presets : 3 slots save/load
 - Photo : capture JPEG dans ~/Images
 - Firmware : mise à jour depuis fichier .bin
+- **Caméra virtuelle** (bouton "Cam Virtuelle") : ffmpeg → /dev/video99 via v4l2loopback (YUYV422 1080p30), partage le flux avec OBS/Firefox/Teams. Vérification automatique de `/dev/video99` et `ffmpeg` avec message d'aide si absent
+- **Miroir horizontal** (bouton ⟺ dans HUD vidéo) : flip H du preview et des captures. Mémorisé via QSettings
+- **Retournement vertical** (bouton ⇅ dans HUD vidéo) : flip V du preview et des captures. Mémorisé via QSettings
+- **Overlay zoom** : affichage du zoom actuel (ex: `2.3×`) en bas à gauche du preview, mis à jour en temps réel depuis le status SDK. Visible uniquement quand la caméra est active
 
 ## Problèmes connus / limites
 - `PresetManager::captureFromDevice()` ne lit pas les angles actuels (TODO)
-- Le contrôle souris/clavier sur VideoWindow est dans `obsbot-linux/` (mauvais répertoire) — non compilé
-- La qualité vidéo (combo 1080p/720p) redémarre la caméra mais n'applique pas encore le format précis
+- La caméra virtuelle nécessite `v4l2loopback` chargé avec `video_nr=99` (message d'aide intégré si absent)
+- La qualité vidéo applique `setCameraFormat()` avant `start()` — fonctionne sur V4L2 Linux, comportement peut varier selon le backend Qt
+
+## QSettings persistants (obsbot-linux / VideoWindow)
+- `mirror/enabled` (bool, défaut: true) — flip horizontal
+- `flip/vertical`  (bool, défaut: false) — retournement vertical
 
 ## Historique commits importants
 - `94b880c` : release initiale v1.0.0

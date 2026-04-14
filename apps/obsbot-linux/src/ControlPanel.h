@@ -22,12 +22,15 @@ class JoystickWidget;
 class QSlider; class QLabel; class QPushButton;
 class QComboBox; class QCheckBox; class QGroupBox;
 class QSpinBox;
+class QProcess;
 
 class ControlPanel : public QWidget
 {
     Q_OBJECT
 public:
     explicit ControlPanel(QWidget *parent = nullptr);
+
+    void stopVirtualCam();
 
 public slots:
     void setEnabled(bool e);
@@ -36,6 +39,7 @@ public slots:
 signals:
     void joystickTouched();
     void joystickReleased();
+    void virtualCamToggled(bool active);
 
 private slots:
     void onZoomChanged(int v);
@@ -53,6 +57,7 @@ private slots:
     void onFirmwareUpgrade();
     void onGestureChanged(int g, bool e);
     void onReset();
+    void onVirtualCamToggle();
 
 private:
     void buildUi();
@@ -108,4 +113,7 @@ private:
     QPushButton    *m_fwUpgradeBtn  = nullptr;
     QString         m_fwFilePath;
     bool            m_firmwareExpanded = false;
+    // Virtual Cam
+    QPushButton    *m_virtualCamBtn = nullptr;
+    QProcess       *m_virtualCamProcess = nullptr;
 };

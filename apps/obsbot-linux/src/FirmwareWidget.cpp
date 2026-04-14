@@ -19,7 +19,7 @@ void FirmwareWidget::buildUi()
     root->setSpacing(16);
 
     // Version actuelle
-    auto *gbInfo = new QGroupBox("Version actuelle");
+    auto *gbInfo = new QGroupBox("Current version");
     auto *il = new QVBoxLayout(gbInfo);
     m_versionLbl = new QLabel("–");
     m_versionLbl->setStyleSheet("font-size:18px; font-weight:bold; color:#89b4fa;");
@@ -27,30 +27,30 @@ void FirmwareWidget::buildUi()
     root->addWidget(gbInfo);
 
     // Mise à jour manuelle
-    auto *gbUpgrade = new QGroupBox("Mise à jour firmware");
+    auto *gbUpgrade = new QGroupBox("Firmware update");
     auto *ul = new QVBoxLayout(gbUpgrade);
 
     auto *info = new QLabel(
-        "1. Telechargez le firmware depuis obsbot.com\n"
-        "2. Selectionnez le fichier .bin\n"
-        "3. Cliquez sur Mettre a jour\n\n"
-        "Ne debranchez pas la camera.");
+        "1. Download firmware from obsbot.com\n"
+        "2. Select the .bin file\n"
+        "3. Click Update firmware\n\n"
+        "Do not unplug the camera.");
     info->setWordWrap(true);
     ul->addWidget(info);
 
-    auto *downloadBtn = new QPushButton("🌐  Télécharger le firmware (obsbot.com)");
+    auto *downloadBtn = new QPushButton("🌐  Download firmware (obsbot.com)");
     downloadBtn->setStyleSheet("color:#89b4fa;");
     ul->addWidget(downloadBtn);
 
     auto *fileRow = new QHBoxLayout;
-    m_fileLbl = new QLabel("Aucun fichier sélectionné");
+    m_fileLbl = new QLabel("No file selected");
     m_fileLbl->setStyleSheet("color:#585b70; font-size:11px;");
-    m_browseBtn = new QPushButton("📂  Parcourir…");
+    m_browseBtn = new QPushButton("📂  Browse…");
     fileRow->addWidget(m_fileLbl, 1);
     fileRow->addWidget(m_browseBtn);
     ul->addLayout(fileRow);
 
-    m_upgradeBtn = new QPushButton("⬆  Mettre à jour le firmware");
+    m_upgradeBtn = new QPushButton("⬆  Update firmware");
     m_upgradeBtn->setProperty("accent", true);
     m_upgradeBtn->setMinimumHeight(42);
     m_upgradeBtn->setEnabled(false);
@@ -87,8 +87,8 @@ void FirmwareWidget::buildUi()
 
 void FirmwareWidget::onBrowse()
 {
-    QString f = QFileDialog::getOpenFileName(this, "Sélectionner le firmware",
-        QDir::homePath(), "Firmware OBSBOT (*.bin);;Tous les fichiers (*)");
+    QString f = QFileDialog::getOpenFileName(this, "Select firmware",
+        QDir::homePath(), "OBSBOT Firmware (*.bin);;All files (*)");
     if (f.isEmpty()) return;
     m_selectedFile = f;
     m_fileLbl->setText(QFileInfo(f).fileName());

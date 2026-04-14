@@ -19,6 +19,7 @@
 #include <QStandardPaths>
 #include <QDateTime>
 #include <QDir>
+#include <QSettings>
 
 // Downscale progressif : deux fois plus net qu'un seul passage SmoothTransformation
 static QImage sharpScale(QImage img, const QSize &target)
@@ -37,7 +38,21 @@ VideoWindow::VideoWindow(QWidget *parent)
     resize(480, 320);
     setStyleSheet("background:#000;");
     setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint);
+
+    QSettings s("obsbot-linux", "VideoWindow");
+    m_mirrorEnabled = s.value("mirror/enabled", true).toBool();
+    m_flipV         = s.value("flip/vertical",  false).toBool();
+
     buildUi();
+
+    // Overlay zoom : mis à jour depuis le status SDK
+    connect(&DeviceManager::instance(), &DeviceManager::statusUpdated,
+            this, [this](Device::CameraStatus status){
+        // zoom_ratio : 0-100 → 1x-4x
+        m_currentZoom = 1.0f + (status.tiny.zoom_ratio / 100.0f) * 3.0f;
+        if (m_zoomOverlay)
+            m_zoomOverlay->setText(QString("%1×").arg(double(m_currentZoom), 0, 'f', 1));
+    });
 
     m_hudTimer = new QTimer(this);
     m_hudTimer->setSingleShot(true);
@@ -67,16 +82,30 @@ void VideoWindow::buildUi()
     m_videoLabel->setStyleSheet("background:#000;");
     m_videoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     root->addWidget(m_videoLabel);
+    
+    m_virtualMsgLbl = new QLabel("Virtual Camera Active\nVideo shared with the system", m_videoLabel);
+    m_virtualMsgLbl->setAlignment(Qt::AlignCenter);
+    m_virtualMsgLbl->setStyleSheet("color: #a6e3a1; font-size: 18px; font-weight: bold; background: rgba(30, 30, 46, 200); border-radius: 10px; padding: 20px;");
+    m_virtualMsgLbl->hide();
 
     m_sink = new QVideoSink(this);
     connect(m_sink, &QVideoSink::videoFrameChanged,
             this, [this](const QVideoFrame &frame) {
         if (!frame.isValid()) return;
-        QImage img = frame.toImage().flipped(Qt::Horizontal);
+        QImage img = frame.toImage();
         if (img.isNull()) return;
+        if (m_mirrorEnabled) img = img.flipped(Qt::Horizontal);
+        if (m_flipV)         img = img.flipped(Qt::Vertical);
         m_videoLabel->setPixmap(QPixmap::fromImage(
             sharpScale(std::move(img), m_videoLabel->size())));
     });
+
+    // Overlay zoom — affiché en bas à gauche, au-dessus du HUD
+    m_zoomOverlay = new QLabel("1.0×", m_videoLabel);
+    m_zoomOverlay->setStyleSheet(
+        "color:rgba(255,255,255,200); font-size:12px; font-weight:bold;"
+        "background:rgba(0,0,0,130); border-radius:3px; padding:1px 5px;");
+    m_zoomOverlay->hide(); // visible seulement quand connecté
 
     buildHud();
     setMouseTracking(true);
@@ -91,13 +120,13 @@ void VideoWindow::buildHud()
     auto *tl = new QHBoxLayout(m_hudTop);
     tl->setContentsMargins(8,0,8,0);
 
-    m_statusLbl = new QLabel("En attente...");
+    m_statusLbl = new QLabel("Waiting...");
     m_statusLbl->setStyleSheet("color:rgba(255,255,255,180);font-size:11px;");
     tl->addWidget(m_statusLbl, 1);
 
     m_hudToggle = new QPushButton("⊗");
     m_hudToggle->setFixedSize(22,22);
-    m_hudToggle->setToolTip("Masquer les controles");
+    m_hudToggle->setToolTip("Hide controls");
     m_hudToggle->setStyleSheet(
         "QPushButton{background:transparent;color:rgba(255,255,255,120);"
         "border:none;font-size:13px;}"
@@ -114,19 +143,49 @@ void VideoWindow::buildHud()
     bl->setContentsMargins(6,4,6,4);
     bl->setSpacing(4);
 
-    m_powerBtn = new QPushButton("⏼");
-    m_pauseBtn = new QPushButton("⏸");
-    m_photoBtn = new QPushButton("📷");
+    m_powerBtn  = new QPushButton("⏼");
+    m_pauseBtn  = new QPushButton("⏸");
+    m_photoBtn  = new QPushButton("📷");
+    m_mirrorBtn = new QPushButton("⟺");
+    m_flipVBtn  = new QPushButton("⇅");
 
-    for (auto *b : {m_powerBtn, m_pauseBtn, m_photoBtn}) {
+    for (auto *b : {m_powerBtn, m_pauseBtn, m_photoBtn, m_mirrorBtn, m_flipVBtn}) {
         b->setFixedSize(30, 26);
         b->setStyleSheet(hudBtnStyle());
         bl->addWidget(b);
     }
 
-    m_powerBtn->setToolTip("Mettre en veille");
-    m_pauseBtn->setToolTip("Pause / Reprendre");
-    m_photoBtn->setToolTip("Capturer photo");
+    m_mirrorBtn->setToolTip("Horizontal mirror (saved)");
+    m_flipVBtn->setToolTip("Vertical flip (saved)");
+
+    // Style actif/inactif pour les boutons de flip
+    static const QString kDimStyle =
+        "QPushButton{background:rgba(0,0,0,140);color:rgba(255,255,255,60);"
+        "border:1px solid rgba(255,255,255,20);border-radius:5px;"
+        "padding:4px 8px;font-size:11px;font-weight:bold;}";
+    auto updateMirrorStyle = [this]{
+        m_mirrorBtn->setStyleSheet(m_mirrorEnabled ? hudBtnStyle() : kDimStyle);
+    };
+    auto updateFlipVStyle = [this]{
+        m_flipVBtn->setStyleSheet(m_flipV ? hudBtnStyle() : kDimStyle);
+    };
+    updateMirrorStyle();
+    updateFlipVStyle();
+
+    m_powerBtn->setToolTip("Sleep");
+    m_pauseBtn->setToolTip("Pause / Resume");
+    m_photoBtn->setToolTip("Take photo");
+
+    connect(m_mirrorBtn, &QPushButton::clicked, this, [this, updateMirrorStyle]{
+        m_mirrorEnabled = !m_mirrorEnabled;
+        QSettings("obsbot-linux", "VideoWindow").setValue("mirror/enabled", m_mirrorEnabled);
+        updateMirrorStyle();
+    });
+    connect(m_flipVBtn, &QPushButton::clicked, this, [this, updateFlipVStyle]{
+        m_flipV = !m_flipV;
+        QSettings("obsbot-linux", "VideoWindow").setValue("flip/vertical", m_flipV);
+        updateFlipVStyle();
+    });
 
     bl->addStretch();
 
@@ -140,8 +199,8 @@ void VideoWindow::buildHud()
         "QComboBox QAbstractItemView{background:#24243e;color:#cdd6f4;"
         "selection-background-color:#89b4fa;selection-color:#1e1e2e;}");
     // 720p par défaut : moins de downscaling → image plus nette en aperçu
-    m_qualCombo->addItem("720p MJPEG");
     m_qualCombo->addItem("1080p MJPEG");
+    m_qualCombo->addItem("720p MJPEG");
     m_qualCombo->addItem("4K MJPEG");
     m_qualCombo->addItem("1080p H264");
     m_qualCombo->addItem("720p H264");
@@ -152,14 +211,14 @@ void VideoWindow::buildHud()
             DeviceManager::instance().setDevRunStatus(Device::DevStatusRun);
             m_sleeping = false;
             m_powerBtn->setText("⏼");
-            m_powerBtn->setToolTip("Mettre en veille");
+            m_powerBtn->setToolTip("Sleep");
             QTimer::singleShot(800, this, &VideoWindow::startCamera);
         } else {
             stopCamera();
             DeviceManager::instance().setDevRunStatus(Device::DevStatusSleep);
             m_sleeping = true;
             m_powerBtn->setText("⏻");
-            m_powerBtn->setToolTip("Reveiller");
+            m_powerBtn->setToolTip("Wake up");
         }
     });
     connect(m_pauseBtn, &QPushButton::clicked, this, [this]{
@@ -189,6 +248,17 @@ void VideoWindow::updateHudPositions()
 {
     if (m_hudTop)    m_hudTop->setGeometry(0, 0, width(), 28);
     if (m_hudBottom) m_hudBottom->setGeometry(0, height()-36, width(), 36);
+
+    if (m_virtualMsgLbl && m_virtualMsgLbl->isVisible()) {
+        m_virtualMsgLbl->adjustSize();
+        m_virtualMsgLbl->move((width() - m_virtualMsgLbl->width()) / 2,
+                              (height() - m_virtualMsgLbl->height()) / 2);
+    }
+    // Overlay zoom : coin bas-gauche, au-dessus du HUD
+    if (m_zoomOverlay) {
+        m_zoomOverlay->adjustSize();
+        m_zoomOverlay->move(8, height() - 36 - m_zoomOverlay->height() - 4);
+    }
 }
 
 void VideoWindow::resizeEvent(QResizeEvent *e)
@@ -232,6 +302,9 @@ void VideoWindow::onHudTimeout() {}
 void VideoWindow::startCamera()
 {
     stopCamera();
+    
+    if (m_virtualMsgLbl) m_virtualMsgLbl->hide();
+    
     QCameraDevice target;
     for (auto &cam : QMediaDevices::videoInputs())
         if (cam.description().contains("OBSBOT", Qt::CaseInsensitive))
@@ -246,12 +319,17 @@ void VideoWindow::startCamera()
     m_session->setCamera(m_camera);
     m_session->setVideoOutput(m_sink);
     m_session->setImageCapture(m_capture);
-
+    
+    // Appliquer la qualite selectionnee dans la combobox
+    // Il faut le faire APRES avoir demarre la camera pour que Qt prenne en compte le format
     // Sauvegarder la photo avec le même flip horizontal que le preview
     connect(m_capture, &QImageCapture::imageCaptured,
             this, [this](int, const QImage &img) {
         if (m_pendingCapturePath.isEmpty()) return;
-        img.flipped(Qt::Horizontal).save(m_pendingCapturePath, "JPEG", 95);
+        QImage out = img;
+        if (m_mirrorEnabled) out = out.flipped(Qt::Horizontal);
+        if (m_flipV)         out = out.flipped(Qt::Vertical);
+        out.save(m_pendingCapturePath, "JPEG", 95);
         m_pendingCapturePath.clear();
     });
 
@@ -263,6 +341,7 @@ void VideoWindow::startCamera()
 
     m_paused = false;
     m_pauseBtn->setText("⏸");
+    if (m_zoomOverlay) { m_zoomOverlay->show(); updateHudPositions(); }
 }
 
 void VideoWindow::stopCamera()
@@ -274,6 +353,23 @@ void VideoWindow::stopCamera()
         delete m_camera;  m_camera  = nullptr;
     }
     m_videoLabel->clear();
+    if (m_zoomOverlay) m_zoomOverlay->hide();
+
+    if (m_virtualMsgLbl && m_virtualCamActive) {
+        m_virtualMsgLbl->show();
+        updateHudPositions();
+    }
+}
+
+void VideoWindow::onVirtualCamToggled(bool active)
+{
+    m_virtualCamActive = active;
+    if (active) {
+        stopCamera();   // libere /dev/video0 pour ffmpeg, affiche le label
+    } else {
+        m_virtualCamActive = false;
+        startCamera();  // reprend le flux, cache le label
+    }
 }
 
 void VideoWindow::pause()  { if (m_camera) m_camera->stop(); }
@@ -324,13 +420,13 @@ void VideoWindow::onDeviceConnected()
     m_photoBtn->setEnabled(true);
     m_sleeping = false;
     m_powerBtn->setText("⏼");
-    m_powerBtn->setToolTip("Mettre en veille");
+    m_powerBtn->setToolTip("Sleep");
     QTimer::singleShot(800, this, &VideoWindow::startCamera);
 }
 
 void VideoWindow::onDeviceDisconnected()
 {
-    m_statusLbl->setText("Camera deconnectee");
+    m_statusLbl->setText("Camera disconnected");
     m_statusLbl->setStyleSheet("color:rgba(243,139,168,200);font-size:11px;");
     m_powerBtn->setEnabled(false);
     m_pauseBtn->setEnabled(false);

@@ -8,6 +8,8 @@
 
 **Contrôleur Linux natif pour les caméras OBSBOT** | **Native Linux controller for OBSBOT cameras**
 
+![Version](https://img.shields.io/badge/version-1.1.0-brightgreen.svg)
+
 [English](#english) | [Français](#français)
 
 </div>
@@ -31,6 +33,8 @@ Deux variantes disponibles :
 - ⚙ **Caméra** — FOV, HDR, Balance des blancs, Mise au point
 - 🔄 **Firmware** — Mise à jour manuelle depuis fichier .bin
 - 📺 **Prévisualisation** — Flux vidéo en direct via Qt Multimedia
+- 📡 **Caméra virtuelle** — Partage le flux sur `/dev/video99` (OBS, Firefox, Teams)
+- 🏠 **Position d'accueil** — Retour automatique si l'IA perd sa cible
 
 ### Installation
 
@@ -63,6 +67,15 @@ cmake --build build
 # Compiler les deux
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
+```
+
+#### Paquets DEB / RPM
+```bash
+# Télécharger depuis les Releases GitHub, puis :
+sudo dpkg -i obsbot-linux_1.1.0_amd64.deb   # Debian / Ubuntu / Kubuntu
+sudo rpm -i obsbot-linux-1.1.0.x86_64.rpm    # Fedora / openSUSE
+
+# La règle udev est installée automatiquement par le paquet.
 ```
 
 #### Flatpak
@@ -102,6 +115,17 @@ Two variants:
 - ⚙ **Camera** — FOV, HDR, White balance, Focus
 - 🔄 **Firmware** — Manual update from .bin file
 - 📺 **Preview** — Live video stream via Qt Multimedia
+- 📡 **Virtual Camera** — Share stream on `/dev/video99` (OBS, Firefox, Teams)
+- 🏠 **Home Position** — Auto-return when AI loses its target
+
+#### DEB / RPM packages
+```bash
+# Download from GitHub Releases, then:
+sudo dpkg -i obsbot-linux_1.1.0_amd64.deb   # Debian / Ubuntu / Kubuntu
+sudo rpm -i obsbot-linux-1.1.0.x86_64.rpm    # Fedora / openSUSE
+
+# The udev rule is installed automatically by the package.
+```
 
 ### License
 GPL v3 — See [LICENSE](LICENSE)

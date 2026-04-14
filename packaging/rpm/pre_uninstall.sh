@@ -1,0 +1,4 @@
+#!/bin/sh
+# Remove udev rule / Supprimer la règle udev
+rm -f /etc/udev/rules.d/99-obsbot.rules
+udevadm control --reload-rules 2>/dev/null || true
