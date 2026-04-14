@@ -5,7 +5,7 @@
 ![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
 ![Platform](https://img.shields.io/badge/Platform-Linux-green.svg)
 ![Qt](https://img.shields.io/badge/Qt-6-blue.svg)
-![Version](https://img.shields.io/badge/version-1.2.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.5.0-brightgreen.svg)
 
 **The only native Linux controller for OBSBOT cameras**  
 **Le seul contrôleur Linux natif pour les caméras OBSBOT**
@@ -103,10 +103,10 @@ sudo cp /etc/firefox/policies/policies.json \
 
 ```bash
 # Ubuntu / Debian / Kubuntu
-sudo apt install ./obsbot-linux_1.2.0_amd64.deb
+sudo apt install ./obsbot-linux_1.5.0_amd64.deb
 
 # Fedora / openSUSE
-sudo rpm -i obsbot-linux-1.2.0.x86_64.rpm
+sudo rpm -i obsbot-linux-1.5.0.x86_64.rpm
 ```
 
 The package automatically installs:
@@ -221,8 +221,8 @@ echo 'v4l2loopback' | sudo tee /etc/modules-load.d/v4l2loopback.conf
 #### Paquets DEB / RPM (recommandé)
 
 ```bash
-sudo apt install ./obsbot-linux_1.2.0_amd64.deb     # Ubuntu / Debian / Kubuntu
-sudo rpm -i obsbot-linux-1.2.0.x86_64.rpm           # Fedora / openSUSE
+sudo apt install ./obsbot-linux_1.5.0_amd64.deb     # Ubuntu / Debian / Kubuntu
+sudo rpm -i obsbot-linux-1.5.0.x86_64.rpm           # Fedora / openSUSE
 ```
 
 Le paquet installe automatiquement la règle udev, la configuration v4l2loopback et la politique Firefox. Branchez la caméra et lancez **OBSBOT Linux** depuis le menu des applications.

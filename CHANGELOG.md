@@ -1,6 +1,6 @@
 # Changelog / Journal des modifications
 
-## [1.2.0] — 2026-04-14
+## [1.5.0] — 2026-04-14
 
 ### English
 

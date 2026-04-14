@@ -6,7 +6,7 @@ Interface Qt6 avec panneau de contrôle et fenêtre vidéo indépendante.
 
 ## Structure du dépôt
 ```
-/home/batatrax/Documents/obsbot-linux/
+obsbot-linux/
 ├── apps/obsbot-linux/src/   ← SOURCES RÉELLES compilées par cmake
 ├── core/                    ← Wrapper SDK (DeviceManager, PresetManager, etc.)
 ├── sdk/                     ← SDK OBSBOT natif (headers + libs)
@@ -18,14 +18,14 @@ Interface Qt6 avec panneau de contrôle et fenêtre vidéo indépendante.
 
 ## Commandes utiles
 ```bash
-# Build
-cd /home/batatrax/Documents/obsbot-linux/build && cmake --build . --target obsbot-linux
+# Build (depuis la racine du dépôt)
+cmake --build build --target obsbot-linux
 
 # Lancer
-cd /home/batatrax/Documents/obsbot-linux/build/apps/obsbot-linux && ./obsbot-linux &
+build/apps/obsbot-linux/obsbot-linux &
 
 # Redémarrer
-pkill -f obsbot-linux; sleep 1 && ./obsbot-linux &
+pkill -f obsbot-linux; sleep 1 && build/apps/obsbot-linux/obsbot-linux &
 ```
 
 ## Fichiers clés
@@ -63,15 +63,21 @@ status.tiny.ai_mode      // mode IA actif (0 = off)
 - Presets : 3 slots save/load
 - Photo : capture JPEG dans ~/Images
 - Firmware : mise à jour depuis fichier .bin
-- **Caméra virtuelle** (bouton "Cam Virtuelle") : ffmpeg → /dev/video99 via v4l2loopback (YUYV422 1080p30), partage le flux avec OBS/Firefox/Teams. Vérification automatique de `/dev/video99` et `ffmpeg` avec message d'aide si absent
+- **Caméra virtuelle** (bouton "Cam Virtuelle") : ffmpeg MJPEG→I420 → /dev/video99 via v4l2loopback. Firefox, OBS, Teams, Chrome. Auto-configuré par le paquet DEB/RPM.
 - **Miroir horizontal** (bouton ⟺ dans HUD vidéo) : flip H du preview et des captures. Mémorisé via QSettings
 - **Retournement vertical** (bouton ⇅ dans HUD vidéo) : flip V du preview et des captures. Mémorisé via QSettings
 - **Overlay zoom** : affichage du zoom actuel (ex: `2.3×`) en bas à gauche du preview, mis à jour en temps réel depuis le status SDK. Visible uniquement quand la caméra est active
 
+## Caméra virtuelle — détails techniques
+- Format : I420 (yuv420p) — format natif libwebrtc, requis pour Firefox
+- v4l2loopback : `exclusive_caps=0` — expose OUTPUT (ffmpeg) et CAPTURE (WirePlumber) séparément
+- Firefox : `media.webrtc.camera.allow-pipewire=true` requis (configuré auto par le paquet)
+- SIGTERM/SIGINT gérés dans main.cpp → ffmpeg tué proprement par le destructeur Qt
+
 ## Problèmes connus / limites
 - `PresetManager::captureFromDevice()` ne lit pas les angles actuels (TODO)
 - La caméra virtuelle nécessite `v4l2loopback` chargé avec `video_nr=99` (message d'aide intégré si absent)
-- La qualité vidéo applique `setCameraFormat()` avant `start()` — fonctionne sur V4L2 Linux, comportement peut varier selon le backend Qt
+- Firefox Flatpak : policies.json non supporté → régler `media.webrtc.camera.allow-pipewire` manuellement dans `about:config`
 
 ## QSettings persistants (obsbot-linux / VideoWindow)
 - `mirror/enabled` (bool, défaut: true) — flip horizontal
@@ -80,3 +86,5 @@ status.tiny.ai_mode      // mode IA actif (0 = off)
 ## Historique commits importants
 - `94b880c` : release initiale v1.0.0
 - `56b4bc7` : fix IA vs contrôle manuel + position d'accueil personnalisée
+- `20dd0c0` : fix pipeline caméra virtuelle (I420, SIGTERM, exclusive_caps=0)
+- `dac3680` : release v1.2.0 — packages auto-configurés, README, CHANGELOG
