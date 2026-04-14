@@ -9,7 +9,9 @@
 class QCamera;
 class QMediaCaptureSession;
 class QVideoSink;
+class QVideoFrame;
 class QImageCapture;
+class QProcess;
 class QLabel;
 class QPushButton;
 class QComboBox;
@@ -69,6 +71,12 @@ private:
     bool                  m_flipV             = false;
     float                 m_currentZoom       = 1.0f;
     QString               m_pendingCapturePath;
+
+    // Virtual cam — ffmpeg MJPEG→YUYV422 → /dev/video99
+    QProcess             *m_vcamProcess = nullptr;
+
+    void startPipeWireBridge();
+    void stopPipeWireBridge();
 
     // HUD
     QWidget     *m_hudTop    = nullptr;

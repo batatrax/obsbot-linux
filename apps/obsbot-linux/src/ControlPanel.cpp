@@ -42,12 +42,32 @@ protected:
 
 ControlPanel::ControlPanel(QWidget *parent) : QWidget(parent)
 {
-    m_virtualCamProcess = new QProcess(this);
     buildUi();
     QSettings s("obsbot-linux", "ControlPanel");
     m_homeYaw   = s.value("home/yaw",   0.0f).toFloat();
     m_homePitch = s.value("home/pitch", 0.0f).toFloat();
     m_homeZoom  = s.value("home/zoom",  1.0f).toFloat();
+
+    // Timer dédié 400ms : contrecarrer le firmware qui réactive l'IA ou override zoom/focus.
+    // NOTE : on N'appelle PAS setAiMode ici — ce serait trop fréquent et interromprait le tracking.
+    //        setAiMode est ré-imposé 1x/sec dans onStatusUpdated (toutes les ~30 frames SDK).
+    //        Ce timer couvre uniquement les propriétés légères qui n'interrompent pas le tracking.
+    m_aiEnforceTimer = new QTimer(this);
+    m_aiEnforceTimer->setInterval(400);
+    connect(m_aiEnforceTimer, &QTimer::timeout, this, [this]{
+        if (!DeviceManager::instance().isConnected()) return;
+        if (!m_aiActive) {
+            // IA désactivée par l'utilisateur → annuler si le firmware l'a réactivée
+            DeviceManager::instance().cancelAiMode();
+            DeviceManager::instance().setAiAutoZoom(false);
+            DeviceManager::instance().setFaceFocus(false);
+        } else if (!m_aiSuspended) {
+            // IA active → ré-imposer UNIQUEMENT les propriétés (pas le mode — non-disruptif)
+            DeviceManager::instance().setFaceFocus(m_faceFocusCb->isChecked());
+            DeviceManager::instance().setAiAutoZoom(!m_zoomLockCb->isChecked());
+        }
+    });
+    m_aiEnforceTimer->start();
 }
 
 void ControlPanel::buildUi()
@@ -96,11 +116,11 @@ void ControlPanel::buildUi()
 
     connect(&FirmwareManager::instance(), &FirmwareManager::progress,
         this, [this](int p, const QString &msg){
-            m_fwVersionLbl->setText(QString("Updating: %1% — %2").arg(p).arg(msg));
+            m_fwVersionLbl->setText(tr("Updating: %1% — %2").arg(p).arg(msg));
         });
     connect(&FirmwareManager::instance(), &FirmwareManager::finished,
         this, [this](bool ok, const QString &msg){
-            m_fwVersionLbl->setText(ok ? "OK: " + msg : "Error: " + msg);
+            m_fwVersionLbl->setText(ok ? tr("OK: ") + msg : tr("Error: ") + msg);
             m_fwUpgradeBtn->setEnabled(true);
         });
 }
@@ -108,18 +128,18 @@ void ControlPanel::buildUi()
 // ── Section Gimbal ─────────────────────────────────────────────────────────────
 QWidget* ControlPanel::buildGimbalSection()
 {
-    auto *gb = new QGroupBox("Gimbal & Zoom");
+    auto *gb = new QGroupBox(tr("Gimbal & Zoom"));
     auto *root = new QVBoxLayout(gb);
     root->setSpacing(4);
 
     // Options en une ligne
     {
         auto *row = new QHBoxLayout;
-        m_invertXCb = new QCheckBox("Inv.X");
-        m_invertYCb = new QCheckBox("Inv.Y");
-        m_invertXCb->setToolTip("Invert left/right");
-        m_invertYCb->setToolTip("Invert up/down");
-        auto *hint = new QLabel("Click joystick → keyboard active (WASD/arrows)");
+        m_invertXCb = new QCheckBox(tr("Inv.X"));
+        m_invertYCb = new QCheckBox(tr("Inv.Y"));
+        m_invertXCb->setToolTip(tr("Invert left/right"));
+        m_invertYCb->setToolTip(tr("Invert up/down"));
+        auto *hint = new QLabel(tr("Click joystick → keyboard active (WASD/arrows)"));
         hint->setStyleSheet("color:#45475a;font-size:10px;font-style:italic;");
         row->addWidget(m_invertXCb);
         row->addWidget(m_invertYCb);
@@ -133,7 +153,7 @@ QWidget* ControlPanel::buildGimbalSection()
     m_joystick->setFixedSize(160, 160);
     root->addWidget(m_joystick, 0, Qt::AlignCenter);
 
-    m_speedLbl = new QLabel("Pan: 0  Tilt: 0");
+    m_speedLbl = new QLabel(tr("Pan: 0  Tilt: 0"));
     m_speedLbl->setAlignment(Qt::AlignCenter);
     m_speedLbl->setStyleSheet("color:#585b70;font-size:10px;");
     root->addWidget(m_speedLbl);
@@ -141,16 +161,16 @@ QWidget* ControlPanel::buildGimbalSection()
     // Boutons Reset + Home + Cibler
     {
         auto *row = new QHBoxLayout;
-        auto *resetBtn = new QPushButton("⟳ Reset");
+        auto *resetBtn = new QPushButton(tr("⟳ Reset"));
         auto *homeBtn  = new QPushButton("🏠");
-        auto *faceBtn  = new QPushButton("👤 Visage");
-        resetBtn->setToolTip("Center gimbal to neutral position (pan 0°, tilt 0°)");
-        homeBtn->setToolTip(
+        auto *faceBtn  = new QPushButton(tr("👤 Visage"));
+        resetBtn->setToolTip(tr("Center gimbal to neutral position (pan 0°, tilt 0°)"));
+        homeBtn->setToolTip(tr(
             "Save current position (pan / tilt / zoom) as home position.\n"
-            "If AI loses its target for ~3 s, the camera returns here automatically.");
-        faceBtn->setToolTip(
+            "If AI loses its target for ~3 s, the camera returns here automatically."));
+        faceBtn->setToolTip(tr(
             "Point the camera toward the nearest face detected by AI.\n"
-            "Tracking mode must be active for this button to have a lasting effect.");
+            "Tracking mode must be active for this button to have a lasting effect."));
         homeBtn->setMaximumHeight(28);
         connect(homeBtn, &QPushButton::clicked, this, [this]{
             float yaw = 0, pitch = 0;
@@ -163,12 +183,12 @@ QWidget* ControlPanel::buildGimbalSection()
             s.setValue("home/pitch", m_homePitch);
             s.setValue("home/zoom",  m_homeZoom);
             m_aiStatusLbl->setText(
-                QString("Home: %1x  Pan:%2°  Tilt:%3°")
+                tr("Home: %1x  Pan:%2°  Tilt:%3°")
                     .arg(double(m_homeZoom), 0, 'f', 1)
                     .arg(double(m_homeYaw),  0, 'f', 0)
                     .arg(double(m_homePitch),0, 'f', 0));
             QTimer::singleShot(3000, this, [this]{
-                if (!m_aiActive) m_aiStatusLbl->setText("AI inactive");
+                if (!m_aiActive) m_aiStatusLbl->setText(tr("AI inactive"));
             });
         });
         faceBtn->setStyleSheet(
@@ -187,16 +207,16 @@ QWidget* ControlPanel::buildGimbalSection()
     // Zoom
     {
         auto *row = new QHBoxLayout;
-        row->addWidget(new QLabel("1x"));
+        row->addWidget(new QLabel(tr("1x")));
         m_zoom = new QSlider(Qt::Horizontal);
         m_zoom->setRange(100,400); m_zoom->setValue(100);
-        m_zoom->setToolTip(
+        m_zoom->setToolTip(tr(
             "Optical zoom 1× to 4×.\n"
             "If AI is active and 'Lock zoom' is off,\n"
-            "the firmware may change this value automatically to reframe the target.");
-        m_zoomLbl = new QLabel("1.0x"); m_zoomLbl->setFixedWidth(34);
+            "the firmware may change this value automatically to reframe the target."));
+        m_zoomLbl = new QLabel(tr("1.0x")); m_zoomLbl->setFixedWidth(34);
         row->addWidget(m_zoom,1);
-        row->addWidget(new QLabel("4x"));
+        row->addWidget(new QLabel(tr("4x")));
         row->addWidget(m_zoomLbl);
         root->addLayout(row);
     }
@@ -204,24 +224,24 @@ QWidget* ControlPanel::buildGimbalSection()
     // FOV
     {
         auto *row = new QHBoxLayout;
-        row->addWidget(new QLabel("FOV:"));
+        row->addWidget(new QLabel(tr("FOV:")));
         m_fovCombo = new QComboBox;
-        m_fovCombo->addItem("86°", int(Device::FovType86));
-        m_fovCombo->addItem("78°", int(Device::FovType78));
-        m_fovCombo->addItem("65°", int(Device::FovType65));
+        m_fovCombo->addItem(tr("86°"), int(Device::FovType86));
+        m_fovCombo->addItem(tr("78°"), int(Device::FovType78));
+        m_fovCombo->addItem(tr("65°"), int(Device::FovType65));
         m_fovCombo->setMaximumWidth(80);
-        m_fovCombo->setToolTip(
+        m_fovCombo->setToolTip(tr(
             "Field of View:\n"
             "• 86° — wide angle, broad frame (meetings, whole room)\n"
             "• 78° — standard\n"
-            "• 65° — telephoto, tight frame (face only)");
+            "• 65° — telephoto, tight frame (face only)"));
         row->addWidget(m_fovCombo);
         row->addStretch();
         root->addLayout(row);
     }
 
     connect(m_joystick, &JoystickWidget::speedChanged, this,
-        [this](int p,int t){ m_speedLbl->setText(QString("Pan:%1 Tilt:%2").arg(p).arg(t)); });
+        [this](int p,int t){ m_speedLbl->setText(tr("Pan:%1 Tilt:%2").arg(p).arg(t)); });
     connect(m_joystick, &JoystickWidget::resetRequested,     this, &ControlPanel::onReset);
     connect(m_joystick, &JoystickWidget::faceTargetRequested,this, &ControlPanel::onFaceTarget);
     connect(m_joystick, &JoystickWidget::presetRequested,    this, &ControlPanel::onPresetLoad);
@@ -230,7 +250,7 @@ QWidget* ControlPanel::buildGimbalSection()
             m_aiSuspended    = true;
             m_noTargetFrames = 0;
             DeviceManager::instance().cancelAiMode();
-            m_aiStatusLbl->setText("AI suspended");
+            m_aiStatusLbl->setText(tr("AI suspended"));
             m_aiStatusLbl->setStyleSheet("color:#f9e2af;font-size:10px;");
         }
         emit joystickTouched();
@@ -241,7 +261,7 @@ QWidget* ControlPanel::buildGimbalSection()
                 if (!m_aiActive || !m_aiSuspended) return;
                 m_aiSuspended = false;
                 DeviceManager::instance().setAiMode(m_savedMode, m_savedSub);
-                m_aiStatusLbl->setText("AI active");
+                m_aiStatusLbl->setText(tr("AI active"));
                 m_aiStatusLbl->setStyleSheet("color:#a6e3a1;font-size:10px;font-weight:bold;");
             });
         }
@@ -259,7 +279,7 @@ QWidget* ControlPanel::buildGimbalSection()
 // ── Section IA ────────────────────────────────────────────────────────────────
 QWidget* ControlPanel::buildAiSection()
 {
-    auto *gb   = new QGroupBox("AI & Tracking");
+    auto *gb   = new QGroupBox(tr("AI & Tracking"));
     auto *root = new QVBoxLayout(gb);
     root->setSpacing(5);
 
@@ -267,24 +287,24 @@ QWidget* ControlPanel::buildAiSection()
     {
         auto *row = new QHBoxLayout;
         m_aiModeCombo = new QComboBox;
-        m_aiModeCombo->addItem("Human - Full Body",  0);
-        m_aiModeCombo->addItem("Human - Upper Body", 1);
-        m_aiModeCombo->addItem("Human - Close-up",   2);
-        m_aiModeCombo->addItem("Group",              3);
-        m_aiModeCombo->addItem("Hand",               4);
+        m_aiModeCombo->addItem(tr("Human - Full Body"),  0);
+        m_aiModeCombo->addItem(tr("Human - Upper Body"), 1);
+        m_aiModeCombo->addItem(tr("Human - Close-up"),   2);
+        m_aiModeCombo->addItem(tr("Group"),              3);
+        m_aiModeCombo->addItem(tr("Hand"),               4);
         m_aiModeCombo->setCurrentIndex(2); // Close-up par défaut
-        m_aiModeCombo->setToolTip(
+        m_aiModeCombo->setToolTip(tr(
             "AI tracking mode:\n"
             "• Full Body  — frames the entire silhouette\n"
             "• Upper Body — frames from waist to shoulders\n"
             "• Close-up   — tight frame on the face\n"
             "• Group      — tracks multiple people simultaneously\n"
-            "• Hand       — tracks the hand (useful for demos)");
-        m_aiBtn = new QPushButton("Enable AI");
-        m_aiBtn->setToolTip(
+            "• Hand       — tracks the hand (useful for demos)"));
+        m_aiBtn = new QPushButton(tr("Enable AI"));
+        m_aiBtn->setToolTip(tr(
             "Enable / disable automatic AI tracking.\n"
             "When active, the joystick temporarily suspends AI\n"
-            "and resumes it 0.5 s after release.");
+            "and resumes it 0.5 s after release."));
         m_aiBtn->setFixedHeight(26);
         m_aiBtn->setStyleSheet(
             "QPushButton{background:#89b4fa;color:#1e1e2e;border:none;"
@@ -296,54 +316,40 @@ QWidget* ControlPanel::buildAiSection()
         root->addLayout(row);
     }
 
-    m_aiStatusLbl = new QLabel("AI inactive");
+    m_aiStatusLbl = new QLabel(tr("AI inactive"));
     m_aiStatusLbl->setStyleSheet("color:#585b70;font-size:10px;font-style:italic;");
     root->addWidget(m_aiStatusLbl);
 
     // Options
     {
         auto *row = new QHBoxLayout;
-        m_faceFocusCb = new QCheckBox("Face AF");
-        m_faceFocusCb->setToolTip(
+        m_faceFocusCb = new QCheckBox(tr("Face AF"));
+        m_faceFocusCb->setToolTip(tr(
             "Face Focus (AF):\n"
             "Forces autofocus on the face tracked by AI.\n"
-            "Disable if focus hunts continuously.");
-        m_zoomLockCb  = new QCheckBox("Lock zoom");
-        m_zoomLockCb->setToolTip(
+            "Disable if focus hunts continuously."));
+        m_zoomLockCb  = new QCheckBox(tr("Lock zoom"));
+        m_zoomLockCb->setToolTip(tr(
             "Lock zoom:\n"
             "Prevents AI from automatically changing zoom to reframe.\n"
-            "Useful to keep a fixed frame despite target movement.");
+            "Useful to keep a fixed frame despite target movement."));
         row->addWidget(m_faceFocusCb);
         row->addWidget(m_zoomLockCb);
 
         // --- Virtual Cam Button ---
-        m_virtualCamBtn = new QPushButton("Virtual Cam");
+        m_virtualCamBtn = new QPushButton(tr("Virtual Cam"));
         m_virtualCamBtn->setFixedHeight(20);
-        m_virtualCamBtn->setToolTip(
+        m_virtualCamBtn->setToolTip(tr(
             "Virtual camera:\n"
             "Shares the OBSBOT stream (1080p 30fps) on /dev/video99\n"
             "for use in OBS, Firefox, Teams, etc.\n"
             "Requires v4l2loopback module loaded with video_nr=99.\n"
-            "While active, this app's preview is suspended.");
+            "While active, this app's preview is suspended."));
         m_virtualCamBtn->setStyleSheet(
             "QPushButton{background:#89b4fa;color:#1e1e2e;border:none;border-radius:3px;font-size:10px;padding:0 5px;}"
             "QPushButton:hover{background:#b4d0fa;}"
             "QPushButton:disabled{background:#313244;color:#585b70;}");
         connect(m_virtualCamBtn, &QPushButton::clicked, this, &ControlPanel::onVirtualCamToggle);
-        
-        connect(m_virtualCamProcess, &QProcess::stateChanged, this, [this](QProcess::ProcessState state) {
-            if (state == QProcess::NotRunning) {
-                m_virtualCamBtn->setText("Virtual Cam");
-                m_virtualCamBtn->setStyleSheet(
-                    "QPushButton{background:#89b4fa;color:#1e1e2e;border:none;border-radius:5px;font-weight:bold;font-size:11px;padding:2px 10px;}"
-                    "QPushButton:hover{background:#b4d0fa;}"
-                    "QPushButton:disabled{background:#313244;color:#585b70;}");
-            } else if (state == QProcess::Running) {
-                m_virtualCamBtn->setText("Stop Cam");
-                m_virtualCamBtn->setStyleSheet(
-                    "QPushButton{background:#f38ba8;color:#1e1e2e;border:none;border-radius:5px;font-weight:bold;font-size:11px;padding:2px 10px;}");
-            }
-        });
         row->addWidget(m_virtualCamBtn);
         row->addStretch();
         root->addLayout(row);
@@ -362,9 +368,9 @@ QWidget* ControlPanel::buildAiSection()
             "→ triggers a JPEG capture"
         };
         for (int i=0;i<3;i++){
-            m_gesture[i] = new QCheckBox(glabels[i]);
+            m_gesture[i] = new QCheckBox(tr(glabels[i]));
             m_gesture[i]->setStyleSheet("font-size:10px;");
-            m_gesture[i]->setToolTip(gtips[i]);
+            m_gesture[i]->setToolTip(tr(gtips[i]));
             row->addWidget(m_gesture[i]);
             connect(m_gesture[i],&QCheckBox::toggled,this,[this,i](bool e){ onGestureChanged(i,e); });
         }
@@ -379,39 +385,39 @@ QWidget* ControlPanel::buildAiSection()
 // ── Section Image ─────────────────────────────────────────────────────────────
 QWidget* ControlPanel::buildImageSection()
 {
-    auto *gb   = new QGroupBox("Image");
+    auto *gb   = new QGroupBox(tr("Image"));
     auto *fl   = new QFormLayout(gb);
     fl->setSpacing(5);
 
     // HDR
     m_hdrCombo = new QComboBox;
-    m_hdrCombo->addItem("HDR off",    int(Device::DevWdrModeNone));
-    m_hdrCombo->addItem("HDR 2-en-1", int(Device::DevWdrModeDol2TO1));
-    m_hdrCombo->setToolTip(
+    m_hdrCombo->addItem(tr("HDR off"),    int(Device::DevWdrModeNone));
+    m_hdrCombo->addItem(tr("HDR 2-en-1"), int(Device::DevWdrModeDol2TO1));
+    m_hdrCombo->setToolTip(tr(
         "High Dynamic Range (HDR / WDR):\n"
         "• Off      — normal image, best framerate\n"
         "• 2-in-1 — blends two exposures to recover\n"
         "               highlights and shadows (backlight).\n"
-        "               May reduce framerate.");
-    fl->addRow("HDR:", m_hdrCombo);
+        "               May reduce framerate."));
+    fl->addRow(tr("HDR:"), m_hdrCombo);
 
     // Balance blancs
     m_wbCombo = new QComboBox;
-    m_wbCombo->addItem("Auto",         int(Device::DevWhiteBalanceAuto));
-    m_wbCombo->addItem("Manual",       int(Device::DevWhiteBalanceManual));
-    m_wbCombo->addItem("Daylight",     int(Device::DevWhiteBalanceDaylight));
-    m_wbCombo->addItem("Cloudy",       int(Device::DevWhiteBalanceCloudy));
-    m_wbCombo->addItem("Tungsten",     int(Device::DevWhiteBalanceTungsten));
-    m_wbCombo->addItem("Fluorescent",  int(Device::DevWhiteBalanceFluorescent));
-    m_wbCombo->setToolTip(
+    m_wbCombo->addItem(tr("Auto"),         int(Device::DevWhiteBalanceAuto));
+    m_wbCombo->addItem(tr("Manual"),       int(Device::DevWhiteBalanceManual));
+    m_wbCombo->addItem(tr("Daylight"),     int(Device::DevWhiteBalanceDaylight));
+    m_wbCombo->addItem(tr("Cloudy"),       int(Device::DevWhiteBalanceCloudy));
+    m_wbCombo->addItem(tr("Tungsten"),     int(Device::DevWhiteBalanceTungsten));
+    m_wbCombo->addItem(tr("Fluorescent"),  int(Device::DevWhiteBalanceFluorescent));
+    m_wbCombo->setToolTip(tr(
         "White balance:\n"
         "• Auto        — camera adjusts continuously (recommended)\n"
         "• Manual      — uses temperature set by the slider\n"
         "• Daylight    — sunlight (~5500K)\n"
         "• Cloudy      — overcast sky (~6500K, slightly blue)\n"
         "• Tungsten    — incandescent bulbs (~3000K, warm/orange)\n"
-        "• Fluorescent — office neons (~4000K)");
-    fl->addRow("WB:", m_wbCombo);
+        "• Fluorescent — office neons (~4000K)"));
+    fl->addRow(tr("WB:"), m_wbCombo);
 
     // Temperature WB
     {
@@ -419,16 +425,16 @@ QWidget* ControlPanel::buildImageSection()
         m_wbTempSlider = new QSlider(Qt::Horizontal);
         m_wbTempSlider->setRange(2000,10000); m_wbTempSlider->setValue(5000);
         m_wbTempSlider->setEnabled(false);
-        m_wbTempSlider->setToolTip(
+        m_wbTempSlider->setToolTip(tr(
             "Color temperature (Manual white balance only):\n"
             "• 2000–3000K — very warm light, orange/amber\n"
             "• 4000–5000K — neutral light, natural white\n"
             "• 6500–7500K — cool light, slightly blue\n"
-            "• 8000–10000K — very cold, clear blue sky");
-        m_wbTempLbl = new QLabel("5000K"); m_wbTempLbl->setFixedWidth(50);
+            "• 8000–10000K — very cold, clear blue sky"));
+        m_wbTempLbl = new QLabel(tr("5000K")); m_wbTempLbl->setFixedWidth(50);
         row->addWidget(m_wbTempSlider); row->addWidget(m_wbTempLbl);
         auto *w = new QWidget; w->setLayout(row);
-        fl->addRow("Temp:", w);
+        fl->addRow(tr("Temp:"), w);
     }
 
     // Focus
@@ -436,15 +442,15 @@ QWidget* ControlPanel::buildImageSection()
         auto *row = new QHBoxLayout;
         m_focusSlider = new QSlider(Qt::Horizontal);
         m_focusSlider->setRange(0,100);
-        m_focusSlider->setToolTip(
+        m_focusSlider->setToolTip(tr(
             "Manual focus (autofocus override):\n"
             "• 0   — sharp on close subjects\n"
             "• 100 — sharp on distant subjects\n"
-            "Rarely needed — firmware autofocus is reliable.");
-        m_focusLbl = new QLabel("0"); m_focusLbl->setFixedWidth(24);
+            "Rarely needed — firmware autofocus is reliable."));
+        m_focusLbl = new QLabel(tr("0")); m_focusLbl->setFixedWidth(24);
         row->addWidget(m_focusSlider); row->addWidget(m_focusLbl);
         auto *w = new QWidget; w->setLayout(row);
-        fl->addRow("Focus:", w);
+        fl->addRow(tr("Focus:"), w);
     }
 
     connect(m_hdrCombo,  QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -459,7 +465,7 @@ QWidget* ControlPanel::buildImageSection()
 // ── Section Presets ───────────────────────────────────────────────────────────
 QWidget* ControlPanel::buildPresetSection()
 {
-    auto *gb   = new QGroupBox("Presets");
+    auto *gb   = new QGroupBox(tr("Presets"));
     auto *root = new QVBoxLayout(gb);
     root->setSpacing(3);
 
@@ -471,13 +477,13 @@ QWidget* ControlPanel::buildPresetSection()
         m_presetLbl[i]->setAlignment(Qt::AlignCenter);
         m_presetLbl[i]->setStyleSheet("color:#a6adc8;font-size:11px;font-weight:bold;");
 
-        m_presetLoad[i] = new QPushButton("▶ Recall");
+        m_presetLoad[i] = new QPushButton(tr("▶ Recall"));
         m_presetLoad[i]->setFixedHeight(22);
         m_presetLoad[i]->setEnabled(false);
         m_presetLoad[i]->setToolTip(
-            QString("Recall preset %1:\n"
-                    "Applies the pan, tilt and zoom saved in this slot.\n"
-                    "Greyed out if the slot is empty.").arg(i+1));
+            tr("Recall preset %1:\n"
+               "Applies the pan, tilt and zoom saved in this slot.\n"
+               "Greyed out if the slot is empty.").arg(i+1));
         m_presetLoad[i]->setStyleSheet(
             "QPushButton{background:#89b4fa;color:#1e1e2e;border:none;"
             "border-radius:4px;font-weight:bold;font-size:10px;}"
@@ -487,9 +493,9 @@ QWidget* ControlPanel::buildPresetSection()
         m_presetSave[i] = new QPushButton("💾");
         m_presetSave[i]->setFixedSize(26, 22);
         m_presetSave[i]->setToolTip(
-            QString("Save to preset %1:\n"
-                    "Saves current pan/tilt position and zoom.\n"
-                    "Overwrites slot content if already in use.").arg(i+1));
+            tr("Save to preset %1:\n"
+               "Saves current pan/tilt position and zoom.\n"
+               "Overwrites slot content if already in use.").arg(i+1));
         m_presetSave[i]->setStyleSheet(
             "QPushButton{background:#313244;color:#a6adc8;border:1px solid #45475a;"
             "border-radius:4px;font-size:11px;}"
@@ -524,7 +530,7 @@ QWidget* ControlPanel::buildFirmwareSection()
     auto *hl = new QHBoxLayout(header);
     hl->setContentsMargins(8,0,8,0);
 
-    m_fwVersionLbl = new QLabel("Firmware");
+    m_fwVersionLbl = new QLabel(tr("Firmware"));
     m_fwVersionLbl->setStyleSheet("color:#a6adc8;font-size:11px;");
     m_fwToggleBtn  = new QPushButton("▶");
     m_fwToggleBtn->setFixedSize(20,20);
@@ -543,14 +549,14 @@ QWidget* ControlPanel::buildFirmwareSection()
     fl->setContentsMargins(8,6,8,6);
     fl->setSpacing(4);
 
-    auto *info = new QLabel(
+    auto *info = new QLabel(tr(
         "1. Download firmware from obsbot.com\n"
         "2. Select the .bin file\n"
-        "3. Click Update firmware");
+        "3. Click Update firmware"));
     info->setStyleSheet("color:#585b70;font-size:10px;");
     fl->addWidget(info);
 
-    auto *dlBtn = new QPushButton("Download (obsbot.com)");
+    auto *dlBtn = new QPushButton(tr("Download (obsbot.com)"));
     dlBtn->setStyleSheet("font-size:10px;color:#89b4fa;");
     connect(dlBtn,&QPushButton::clicked,this,[]{
         QDesktopServices::openUrl(QUrl("https://www.obsbot.com/download/obsbot-tiny-2-lite"));
@@ -558,16 +564,16 @@ QWidget* ControlPanel::buildFirmwareSection()
     fl->addWidget(dlBtn);
 
     auto *fileRow = new QHBoxLayout;
-    m_fwFileLbl = new QLabel("No file selected");
+    m_fwFileLbl = new QLabel(tr("No file selected"));
     m_fwFileLbl->setStyleSheet("color:#585b70;font-size:10px;");
-    auto *browseBtn = new QPushButton("Browse");
+    auto *browseBtn = new QPushButton(tr("Browse"));
     browseBtn->setFixedHeight(24);
     browseBtn->setStyleSheet("font-size:10px;");
     connect(browseBtn,&QPushButton::clicked,this,&ControlPanel::onFirmwareBrowse);
     fileRow->addWidget(m_fwFileLbl,1); fileRow->addWidget(browseBtn);
     fl->addLayout(fileRow);
 
-    m_fwUpgradeBtn = new QPushButton("Update firmware");
+    m_fwUpgradeBtn = new QPushButton(tr("Update firmware"));
     m_fwUpgradeBtn->setFixedHeight(28);
     m_fwUpgradeBtn->setEnabled(false);
     m_fwUpgradeBtn->setStyleSheet(
@@ -586,7 +592,7 @@ QWidget* ControlPanel::buildFirmwareSection()
         // Afficher la version si on a un device
         if (!m_firmwareExpanded && DeviceManager::instance().isConnected())
             m_fwVersionLbl->setText(
-                "Firmware v" + DeviceManager::instance().deviceVersion());
+                tr("Firmware v") + DeviceManager::instance().deviceVersion());
     };
     connect(m_fwToggleBtn, &QPushButton::clicked, this, &ControlPanel::onFirmwareToggle);
 
@@ -630,23 +636,23 @@ void ControlPanel::onAiToggle()
         }
         DeviceManager::instance().setAiMode(m_savedMode,m_savedSub);
         m_aiActive=true; m_aiSuspended=false;
-        m_aiBtn->setText("Disable AI");
+        m_aiBtn->setText(tr("Disable AI"));
         m_aiBtn->setStyleSheet(
             "QPushButton{background:#f38ba8;color:#1e1e2e;border:none;"
             "border-radius:5px;font-weight:bold;font-size:11px;padding:2px 10px;}");
-        m_aiStatusLbl->setText("AI active");
+        m_aiStatusLbl->setText(tr("AI active"));
         m_aiStatusLbl->setStyleSheet("color:#a6e3a1;font-size:10px;font-weight:bold;");
     } else {
         DeviceManager::instance().cancelAiMode();
         DeviceManager::instance().setAiAutoZoom(true);
-        m_aiActive=false; m_aiSuspended=false;
-        m_aiBtn->setText("Enable AI");
+        m_aiActive=false; m_aiSuspended=false; m_aiEnforceCounter=0;
+        m_aiBtn->setText(tr("Enable AI"));
         m_aiBtn->setStyleSheet(
             "QPushButton{background:#89b4fa;color:#1e1e2e;border:none;"
             "border-radius:5px;font-weight:bold;font-size:11px;padding:2px 10px;}"
             "QPushButton:hover{background:#b4d0fa;}"
             "QPushButton:disabled{background:#313244;color:#585b70;}");
-        m_aiStatusLbl->setText("AI inactive");
+        m_aiStatusLbl->setText(tr("AI inactive"));
         m_aiStatusLbl->setStyleSheet("color:#585b70;font-size:10px;font-style:italic;");
     }
 }
@@ -678,8 +684,8 @@ void ControlPanel::onPresetLoad(int id) { PresetManager::instance().applyToDevic
 void ControlPanel::onPresetSave(int id)
 {
     bool ok;
-    QString name=QInputDialog::getText(this,"Preset","Name:",QLineEdit::Normal,
-        QString("Preset %1").arg(id+1),&ok);
+    QString name=QInputDialog::getText(this,tr("Preset"),tr("Name:"),QLineEdit::Normal,
+        tr("Preset %1").arg(id+1),&ok);
     if (ok) PresetManager::instance().captureFromDevice(id,name);
 }
 
@@ -692,8 +698,8 @@ void ControlPanel::onFirmwareToggle()
 
 void ControlPanel::onFirmwareBrowse()
 {
-    QString f=QFileDialog::getOpenFileName(this,"Firmware",
-        QDir::homePath(),"Firmware (*.bin);;All (*)");
+    QString f=QFileDialog::getOpenFileName(this,tr("Firmware"),
+        QDir::homePath(),tr("Firmware (*.bin);;All (*)"));
     if (f.isEmpty()) return;
     m_fwFilePath=f;
     m_fwFileLbl->setText(QFileInfo(f).fileName());
@@ -720,12 +726,29 @@ void ControlPanel::onStatusUpdated(Device::CameraStatus status)
         m_zoom->blockSignals(false);
     }
     if (DeviceManager::instance().isConnected() && !m_firmwareExpanded)
-        m_fwVersionLbl->setText("Firmware v"+DeviceManager::instance().deviceVersion());
+        m_fwVersionLbl->setText(tr("Firmware v")+DeviceManager::instance().deviceVersion());
 
     // Le firmware peut activer l'IA tout seul → on force OFF si l'utilisateur ne l'a pas activée
     if (!m_aiActive && status.tiny.ai_mode != 0) {
         DeviceManager::instance().cancelAiMode();
         DeviceManager::instance().setAiAutoZoom(false);
+        DeviceManager::instance().setFaceFocus(false);
+    }
+
+    // Ré-imposer le mode IA :
+    //  - Immédiatement si le firmware a coupé l'IA (ai_mode == 0) alors qu'elle devrait être active
+    //  - Sinon toutes les ~30 frames (≈1s) pour contrer un changement silencieux de sub-mode
+    //    (ex: gros plan → corps entier) sans interrompre le tracking à chaque frame.
+    if (m_aiActive && !m_aiSuspended) {
+        const bool firmwareKilledAi = (status.tiny.ai_mode == 0);
+        if (firmwareKilledAi || ++m_aiEnforceCounter >= 30) {
+            m_aiEnforceCounter = 0;
+            DeviceManager::instance().setAiMode(m_savedMode, m_savedSub);
+            DeviceManager::instance().setFaceFocus(m_faceFocusCb->isChecked());
+            DeviceManager::instance().setAiAutoZoom(!m_zoomLockCb->isChecked());
+        }
+    } else {
+        m_aiEnforceCounter = 0;
     }
 
     // Retour à la position d'accueil si le suivi est perdu pendant ~3 secondes
@@ -735,7 +758,7 @@ void ControlPanel::onStatusUpdated(Device::CameraStatus status)
             if (m_noTargetFrames == 30) {
                 DeviceManager::instance().gimbalSetAngle(m_homeYaw, m_homePitch);
                 DeviceManager::instance().setZoom(double(m_homeZoom));
-                m_aiStatusLbl->setText("Target lost → returning home");
+                m_aiStatusLbl->setText(tr("Target lost → returning home"));
                 m_aiStatusLbl->setStyleSheet("color:#f38ba8;font-size:10px;");
             }
         } else {
@@ -757,70 +780,76 @@ void ControlPanel::setEnabled(bool e)
         m_aiActive       = false;
         m_aiSuspended    = false;
         m_noTargetFrames = 0;
-        m_aiStatusLbl->setText("Camera not connected");
-        m_fwVersionLbl->setText("Firmware — not connected");
+        m_aiStatusLbl->setText(tr("Camera not connected"));
+        m_fwVersionLbl->setText(tr("Firmware — not connected"));
     }
 }
 
 void ControlPanel::onVirtualCamToggle()
 {
-    if (m_virtualCamProcess->state() == QProcess::Running) {
-        m_virtualCamProcess->terminate();
-        if (!m_virtualCamProcess->waitForFinished(1000)) {
-            // SIGTERM ignoré — SIGKILL immédiat
-            m_virtualCamProcess->kill();
-            m_virtualCamProcess->waitForFinished(2000); // attendre mort effective
-        }
+    if (m_virtualCamActive) {
+        // Arrêt
+        m_virtualCamActive = false;
+        m_virtualCamBtn->setText(tr("Virtual Cam"));
+        m_virtualCamBtn->setStyleSheet(
+            "QPushButton{background:#89b4fa;color:#1e1e2e;border:none;border-radius:3px;font-size:10px;padding:0 5px;}"
+            "QPushButton:hover{background:#b4d0fa;}"
+            "QPushButton:disabled{background:#313244;color:#585b70;}");
         emit virtualCamToggled(false);
-    } else {
-        // Vérifier que le périphérique virtuel existe (v4l2loopback chargé)
-        if (!QFileInfo::exists("/dev/video99")) {
-            QMessageBox msg(this);
-            msg.setWindowTitle("Virtual camera unavailable");
-            msg.setIcon(QMessageBox::Warning);
-            msg.setText("<b>/dev/video99 not found</b><br>"
-                        "The <code>v4l2loopback</code> module is not loaded.");
-            msg.setInformativeText(
-                "Run this command in a terminal then try again:<br><br>"
-                "<code>sudo modprobe v4l2loopback video_nr=99 card_label=\"OBSBot Virtual\" exclusive_caps=1</code><br><br>"
-                "To load it automatically at boot, add <code>v4l2loopback</code> "
-                "to <code>/etc/modules</code> with options in <code>/etc/modprobe.d/v4l2loopback.conf</code>.");
-            msg.exec();
-            return;
-        }
-        // Vérifier que ffmpeg est disponible dans le PATH
-        if (QProcess::execute("which", {"ffmpeg"}) != 0) {
-            QMessageBox::warning(this, "ffmpeg not found",
-                "ffmpeg is not installed or not in PATH.<br>"
-                "Install it with: <code>sudo apt install ffmpeg</code>");
-            return;
-        }
-
-        // Demander à la fenêtre vidéo de libérer /dev/video0
-        emit virtualCamToggled(true);
-
-        // Attendre que la caméra soit libérée avant de lancer ffmpeg
-        QTimer::singleShot(500, this, [this]() {
-            // Flux MJPEG 1080p30 → YUYV422 sur /dev/video99
-            // YUYV422 est le format le mieux supporté par v4l2loopback (Firefox, OBS, Teams...)
-            m_virtualCamProcess->start("ffmpeg", {
-                "-f", "v4l2", "-input_format", "mjpeg",
-                "-video_size", "1920x1080", "-framerate", "30",
-                "-i", "/dev/video0",
-                "-pix_fmt", "yuyv422",
-                "-f", "v4l2", "/dev/video99"
-            });
-        });
+        return;
     }
+
+    // Vérifier que /dev/video99 existe (v4l2loopback chargé)
+    if (!QFileInfo::exists("/dev/video99")) {
+        QMessageBox msg(this);
+        msg.setWindowTitle(tr("Virtual camera — module required"));
+        msg.setIcon(QMessageBox::Question);
+        msg.setText(tr("<b>v4l2loopback is not loaded</b><br>"
+                       "This module is required to create the virtual camera on <code>/dev/video99</code>."));
+        msg.setInformativeText(tr(
+            "Click <b>Load now</b> to load it immediately (requires administrator password).<br>"
+            "The module will also be configured to load automatically at boot."));
+        QPushButton *loadBtn = msg.addButton(tr("Load now"), QMessageBox::AcceptRole);
+        msg.addButton(QMessageBox::Cancel);
+        msg.exec();
+        if (msg.clickedButton() != loadBtn) return;
+
+        QProcess pkexec;
+        pkexec.start("pkexec", {
+            "bash", "-c",
+            // exclusive_caps=0 : expose OUTPUT (ffmpeg) ET CAPTURE (WirePlumber) séparément.
+            // exclusive_caps=1 → EBUSY quand ffmpeg et WirePlumber s'ouvrent simultanément.
+            "modprobe v4l2loopback video_nr=99 card_label='OBSBot Virtual Camera' exclusive_caps=0 && "
+            "echo \"options v4l2loopback video_nr=99 card_label=\\\"OBSBot Virtual Camera\\\" exclusive_caps=0\" "
+                "> /etc/modprobe.d/v4l2loopback.conf && "
+            "echo 'v4l2loopback' > /etc/modules-load.d/v4l2loopback.conf"
+        });
+        pkexec.waitForFinished(15000);
+        if (pkexec.exitCode() != 0 || !QFileInfo::exists("/dev/video99")) {
+            QMessageBox::warning(this, tr("Module load failed"),
+                tr("/dev/video99 still not available.<br>"
+                   "Check: <code>sudo apt install v4l2loopback-dkms</code>"));
+            return;
+        }
+    }
+
+    // Démarrage — VideoWindow branche QVideoSink → /dev/video99 directement
+    m_virtualCamActive = true;
+    m_virtualCamBtn->setText(tr("Stop Cam"));
+    m_virtualCamBtn->setStyleSheet(
+        "QPushButton{background:#f38ba8;color:#1e1e2e;border:none;border-radius:3px;font-size:10px;padding:0 5px;}"
+        "QPushButton:hover{background:#f4a0b5;}");
+    emit virtualCamToggled(true);
 }
 
 void ControlPanel::stopVirtualCam()
 {
-    if (!m_virtualCamProcess || m_virtualCamProcess->state() == QProcess::NotRunning)
-        return;
-    m_virtualCamProcess->terminate();
-    if (!m_virtualCamProcess->waitForFinished(1000)) {
-        m_virtualCamProcess->kill();
-        m_virtualCamProcess->waitForFinished(2000); // mort garantie avant de continuer
-    }
+    if (!m_virtualCamActive) return;
+    m_virtualCamActive = false;
+    m_virtualCamBtn->setText(tr("Virtual Cam"));
+    m_virtualCamBtn->setStyleSheet(
+        "QPushButton{background:#89b4fa;color:#1e1e2e;border:none;border-radius:3px;font-size:10px;padding:0 5px;}"
+        "QPushButton:hover{background:#b4d0fa;}"
+        "QPushButton:disabled{background:#313244;color:#585b70;}");
+    emit virtualCamToggled(false);
 }
